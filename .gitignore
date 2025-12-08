@@ -1,0 +1,32 @@
+# Binaries
+/cmd/exporter/exporter
+/wallet-exporter
+
+# Generated contracts
+/internal/contracts/*.go
+
+# Dependencies
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.txt
+
+# Logs
+*.log

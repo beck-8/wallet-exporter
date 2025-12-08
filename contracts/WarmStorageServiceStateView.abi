@@ -1,0 +1,26 @@
+[
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "offset",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "getApprovedProviders",
+    "outputs": [
+      {
+        "name": "providerIds",
+        "internalType": "uint256[]",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]

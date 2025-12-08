@@ -1,0 +1,28 @@
+[
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "serviceProviderRegistry",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "viewContractAddress",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
