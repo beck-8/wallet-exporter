@@ -27,7 +27,7 @@ docker-build: ## Build Docker image
 docker-run: docker-build ## Build and run Docker container
 	@echo "Starting Docker container..."
 	@docker-compose up -d
-	@echo "✅ Exporter running at http://localhost:9090"
+	@echo "✅ Exporter running at http://localhost:9091"
 	@echo "View logs: docker-compose logs -f"
 
 docker-stop: ## Stop Docker container
@@ -73,10 +73,10 @@ install-tools: ## Install development tools
 	@echo "✅ Tools installed"
 
 status: ## Check exporter status
-	@curl -s http://localhost:9090/status || echo "Exporter not running"
+	@curl -s http://localhost:9091/status || echo "Exporter not running"
 
 metrics: ## View current metrics
-	@curl -s http://localhost:9090/metrics | grep dealbot_provider || echo "Exporter not running"
+	@curl -s http://localhost:9091/metrics | grep dealbot_provider || echo "Exporter not running"
 
 health: ## Check exporter health
-	@curl -s http://localhost:9090/health || echo "Exporter not running"
+	@curl -s http://localhost:9091/health || echo "Exporter not running"

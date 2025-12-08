@@ -11,15 +11,15 @@ import (
 )
 
 type Config struct {
-	Network             string
-	RPCURL              string
-	WarmStorageAddress  string
-	USDFCTokenAddress   string
-	CustomWallets       []CustomWallet
-	ExporterPort        int
-	ScrapeInterval      time.Duration
-	MetricsPrefix       string
-	LogLevel            string
+	Network            string
+	RPCURL             string
+	WarmStorageAddress string
+	USDFCTokenAddress  string
+	CustomWallets      []CustomWallet
+	ExporterPort       int
+	ScrapeInterval     time.Duration
+	MetricsPrefix      string
+	LogLevel           string
 }
 
 type CustomWallet struct {
@@ -41,15 +41,15 @@ func Load() (*Config, error) {
 	network := getEnv("NETWORK", "calibration")
 
 	cfg := &Config{
-		Network:             network,
-		RPCURL:              getEnv("RPC_URL", "https://api.calibration.node.glif.io/rpc/v1"),
-		WarmStorageAddress:  getEnv("WARM_STORAGE_ADDRESS", "0x80617b65FD2EEa1D7fDe2B4F85977670690ed348"),
-		USDFCTokenAddress:   getEnv("USDFC_TOKEN_ADDRESS", defaultUSDFC[network]),
-		CustomWallets:       parseCustomWallets(getEnv("CUSTOM_WALLETS", "")),
-		ExporterPort:        getEnvInt("EXPORTER_PORT", 9090),
-		ScrapeInterval:      getEnvDuration("SCRAPE_INTERVAL", 60*time.Second),
-		MetricsPrefix:       getEnv("METRICS_PREFIX", "dealbot"),
-		LogLevel:            getEnv("LOG_LEVEL", "info"),
+		Network:            network,
+		RPCURL:             getEnv("RPC_URL", "https://api.calibration.node.glif.io/rpc/v1"),
+		WarmStorageAddress: getEnv("WARM_STORAGE_ADDRESS", "0x80617b65FD2EEa1D7fDe2B4F85977670690ed348"),
+		USDFCTokenAddress:  getEnv("USDFC_TOKEN_ADDRESS", defaultUSDFC[network]),
+		CustomWallets:      parseCustomWallets(getEnv("CUSTOM_WALLETS", "")),
+		ExporterPort:       getEnvInt("EXPORTER_PORT", 9091),
+		ScrapeInterval:     getEnvDuration("SCRAPE_INTERVAL", 60*time.Second),
+		MetricsPrefix:      getEnv("METRICS_PREFIX", "dealbot"),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
 	}
 
 	if err := cfg.Validate(); err != nil {

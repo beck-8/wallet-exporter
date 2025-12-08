@@ -20,8 +20,8 @@ func TestLoadDefault(t *testing.T) {
 		t.Errorf("Expected network 'calibration', got '%s'", cfg.Network)
 	}
 
-	if cfg.ExporterPort != 9090 {
-		t.Errorf("Expected port 9090, got %d", cfg.ExporterPort)
+	if cfg.ExporterPort != 9091 {
+		t.Errorf("Expected port 9091, got %d", cfg.ExporterPort)
 	}
 
 	if cfg.MetricsPrefix != "dealbot" {
@@ -68,7 +68,7 @@ func TestValidateWarmStorageAddress(t *testing.T) {
 		Network:            "calibration",
 		RPCURL:             "https://api.calibration.node.glif.io/rpc/v1",
 		WarmStorageAddress: "",
-		ExporterPort:       9090,
+		ExporterPort:       9091,
 		ScrapeInterval:     60 * time.Second,
 		MetricsPrefix:      "dealbot",
 	}
@@ -84,7 +84,7 @@ func TestValidateRPCURL(t *testing.T) {
 		Network:            "calibration",
 		RPCURL:             "",
 		WarmStorageAddress: "0x1234567890123456789012345678901234567890",
-		ExporterPort:       9090,
+		ExporterPort:       9091,
 		ScrapeInterval:     60 * time.Second,
 		MetricsPrefix:      "dealbot",
 	}

@@ -57,7 +57,7 @@ COPY --from=builder /build/wallet-exporter .
 # Copy contracts directory (for reference)
 COPY --from=builder /build/contracts ./contracts
 
-# Expose metrics port (default 9090, can be overridden with EXPORTER_PORT env var)
+# Expose metrics port (default 9081, can be overridden with EXPORTER_PORT env var)
 EXPOSE 9091
 
 # Health check (uses EXPORTER_PORT environment variable)
