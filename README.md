@@ -279,10 +279,7 @@ Storage Providers (18):
 ```
 wallet-exporter/
 ├── cmd/
-│   ├── exporter/main.go       # Main application
-│   ├── test-config/main.go    # Config test utility
-│   ├── test-contract/main.go  # Contract test utility
-│   └── test-usdfc/main.go     # USDFC test utility
+│   └── exporter/main.go       # Main application
 ├── internal/
 │   ├── config/config.go       # Configuration management
 │   ├── contracts/             # Generated Go bindings (git-ignored)
@@ -339,19 +336,6 @@ go build -o wallet-exporter ./cmd/exporter
 CGO_ENABLED=0 go build -ldflags="-s -w" -o wallet-exporter ./cmd/exporter
 ```
 
-### Test Utilities
-
-```bash
-# Test configuration loading
-go run ./cmd/test-config
-
-# Test contract connectivity
-go run ./cmd/test-contract
-
-# Test USDFC token contract
-go run ./cmd/test-usdfc
-```
-
 ## Troubleshooting
 
 ### Common Issues
@@ -363,7 +347,6 @@ go run ./cmd/test-usdfc
 
 **2. USDFC balance always 0**
 - Most providers don't have USDFC tokens - this is normal
-- Use test utility: `go run ./cmd/test-usdfc`
 - Verify `USDFC_TOKEN_ADDRESS` is correct
 
 **3. Contract call reverted**
