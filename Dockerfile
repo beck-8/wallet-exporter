@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:alpine AS builder
 
 # Install build dependencies including abigen
 RUN apk add --no-cache git make gcc musl-dev linux-headers
