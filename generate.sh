@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Generate Go bindings from contract ABIs
 # This script requires abigen to be installed: go install github.com/ethereum/go-ethereum/cmd/abigen@latest

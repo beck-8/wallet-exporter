@@ -1,9 +1,6 @@
 # Build stage
 FROM golang:alpine AS builder
 
-# Install build dependencies including abigen
-RUN apk add --no-cache git make gcc musl-dev linux-headers
-
 # Set working directory
 WORKDIR /build
 
@@ -19,29 +16,11 @@ RUN go mod download
 # Copy source code and contracts
 COPY . .
 
-# Generate Go contract bindings from ABIs
-RUN echo "Generating Go contract bindings..." && \
-    mkdir -p internal/contracts && \
-    abigen --abi contracts/WarmStorageService.abi \
-           --pkg contracts \
-           --type WarmStorageService \
-           --out internal/contracts/warm_storage_service.go && \
-    abigen --abi contracts/WarmStorageServiceStateView.abi \
-           --pkg contracts \
-           --type WarmStorageServiceStateView \
-           --out internal/contracts/warm_storage_view.go && \
-    abigen --abi contracts/ServiceProviderRegistry.abi \
-           --pkg contracts \
-           --type ServiceProviderRegistry \
-           --out internal/contracts/sp_registry.go && \
-    abigen --abi contracts/ERC20.abi \
-           --pkg contracts \
-           --type ERC20 \
-           --out internal/contracts/erc20.go && \
-    echo "✅ Contract bindings generated successfully!"
+# Generate Go contract bindings from ABIs using the generate script
+RUN chmod +x generate.sh && ./generate.sh
 
 # Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o wallet-exporter ./cmd/exporter
+RUN CGO_ENABLED=0 GOOS=linux go build -o wallet-exporter ./cmd/exporter
 
 # Runtime stage
 FROM alpine:latest
