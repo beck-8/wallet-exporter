@@ -14,9 +14,16 @@ services:
       - RPC_URL=${RPC_URL:-https://api.calibration.node.glif.io/rpc/v1}
       - WARM_STORAGE_ADDRESS=${WARM_STORAGE_ADDRESS:-0x02925630df557F957f70E112bA06e50965417CA0}
       - USDFC_TOKEN_ADDRESS=${USDFC_TOKEN_ADDRESS:-}
+      # Custom wallets - new multi-line format (recommended)
+      - CUSTOM_WALLET_1=${CUSTOM_WALLET_1:-}
+      - CUSTOM_WALLET_2=${CUSTOM_WALLET_2:-}
+      - CUSTOM_WALLET_3=${CUSTOM_WALLET_3:-}
+      - CUSTOM_WALLET_4=${CUSTOM_WALLET_4:-}
+      # Legacy format (still supported)
       - CUSTOM_WALLETS=${CUSTOM_WALLETS:-}
       - EXPORTER_PORT=${EXPORTER_PORT:-9091}
       - SCRAPE_INTERVAL=${SCRAPE_INTERVAL:-60s}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-10}
       - METRICS_PREFIX=${METRICS_PREFIX:-dealbot}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     restart: unless-stopped

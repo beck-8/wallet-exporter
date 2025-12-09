@@ -257,7 +257,7 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 	errorChan := make(chan error, int(providerCount.Int64()))
 
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Limit concurrent requests to 10
+	semaphore := make(chan struct{}, e.config.MaxConcurrentRequests) // Limit concurrent requests
 
 	for i := uint64(1); i <= providerCount.Uint64(); i++ {
 		wg.Add(1)
@@ -342,7 +342,7 @@ func (e *WalletExporter) fetchCustomWallets(ctx context.Context) ([]WalletInfo, 
 	errorChan := make(chan error, len(e.config.CustomWallets))
 
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10)
+	semaphore := make(chan struct{}, e.config.MaxConcurrentRequests)
 
 	for _, customWallet := range e.config.CustomWallets {
 		wg.Add(1)

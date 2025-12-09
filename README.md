@@ -72,9 +72,10 @@ The exporter will:
 | `RPC_URL` | Filecoin RPC endpoint | `https://api.calibration.node.glif.io/rpc/v1` |
 | `WARM_STORAGE_ADDRESS` | WarmStorageService contract address | `0x02925630df557F957f70E112bA06e50965417CA0` |
 | `USDFC_TOKEN_ADDRESS` | USDFC ERC20 token address (auto-detected if not set) | `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0` |
-| `CUSTOM_WALLETS` | Additional wallets to monitor (optional) | - |
+| `CUSTOM_WALLET_N` | Additional wallets to monitor (see below) | - |
 | `EXPORTER_PORT` | HTTP server port | `9091` |
 | `SCRAPE_INTERVAL` | How often to scrape blockchain | `60s` |
+| `MAX_CONCURRENT_REQUESTS` | Maximum concurrent RPC requests (1-1000) | `10` |
 | `METRICS_PREFIX` | Prometheus metrics prefix | `dealbot` |
 | `LOG_LEVEL` | Logging level | `debug` |
 
@@ -98,14 +99,37 @@ USDFC_TOKEN_ADDRESS=0x80B98d3aa09ffff255c3ba4A241111Ff1262F045
 
 ### Custom Wallet Monitoring
 
-Monitor additional wallets (clients, operators, etc.):
+Monitor additional wallets (clients, operators, etc.) beyond storage providers.
+
+**Recommended Format** (each wallet on a separate line):
 
 ```bash
-# Format: address:name:type,address:name:type,...
+# Format: address:name:type
+# Type is optional, defaults to "other"
+CUSTOM_WALLET_1=0xa108Be4331296Ec8b8C47c2Cd2FbfDDF06E27523:Client A:client
+CUSTOM_WALLET_2=0x1234567890123456789012345678901234567890:Operator B:operator
+CUSTOM_WALLET_3=0xabcdef1234567890abcdef1234567890abcdef12:Storage Provider C:provider
+CUSTOM_WALLET_4=0x9876543210987654321098765432109876543210:Test Wallet
+```
+
+**Supported wallet types:**
+- `provider` - Storage provider wallets
+- `client` - Client wallets
+- `operator` - Operator wallets
+- `other` - Other wallets (default)
+
+**Legacy Format** (still supported for backward compatibility):
+
+```bash
+# Single line, comma-separated
 CUSTOM_WALLETS=0xa108Be4331296Ec8b8C47c2Cd2FbfDDF06E27523:Client A:client,0x1234...:Operator B:operator
 ```
 
-Supported types: `client`, `operator`, `other`
+**Benefits of multi-line format:**
+- ✅ Easy to add/remove wallets
+- ✅ Better readability
+- ✅ Easy to comment out specific wallets
+- ✅ Works seamlessly with Docker and Kubernetes
 
 ## Installation & Deployment
 
@@ -386,10 +410,16 @@ curl -s http://localhost:9091/metrics | grep "dealbot_wallet_fil_balance" | wc -
 
 ## Performance
 
-- **Concurrent fetching**: Up to 10 parallel requests
-- **Typical scrape time**: 2-5 seconds for 18 providers
+- **Concurrent fetching**: Configurable via `MAX_CONCURRENT_REQUESTS` (default: 10 parallel requests)
+- **Typical scrape time**: 2-5 seconds for 18 providers (with default concurrency)
 - **Memory usage**: ~50-100 MB
 - **CPU usage**: Minimal (event-driven)
+- **Scalability**: Supports up to 1000 custom wallets + all registry providers
+
+**Performance Tuning:**
+- Increase `MAX_CONCURRENT_REQUESTS` for faster scraping (if RPC allows)
+- Decrease if you hit rate limits or connection issues
+- Monitor RPC endpoint response times
 
 ## Security
 
