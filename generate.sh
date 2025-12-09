@@ -34,4 +34,10 @@ abigen --abi contracts/ERC20.abi \
        --type ERC20 \
        --out internal/contracts/erc20.go
 
+# Generate Payments binding
+abigen --abi contracts/Payments.abi \
+       --pkg contracts \
+       --type Payments \
+       --out internal/contracts/payments.go
+
 echo "✅ Contract bindings generated successfully!"

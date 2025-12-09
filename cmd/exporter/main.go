@@ -49,11 +49,12 @@ func main() {
 		log.Fatalf("❌ Failed to load configuration: %v", err)
 	}
 
-	log.Printf("✓ Configuration loaded successfully")
+	log.Println("✓ Configuration loaded successfully")
 	log.Printf("  Network: %s", cfg.Network)
 	log.Printf("  RPC URL: %s", cfg.RPCURL)
 	log.Printf("  Warm Storage Address: %s", cfg.WarmStorageAddress)
 	log.Printf("  USDFC Token Address: %s", cfg.USDFCTokenAddress)
+	log.Printf("  Payments Address: %s", cfg.PaymentsAddress)
 	log.Printf("  Exporter Port: %d", cfg.ExporterPort)
 	log.Printf("  Scrape Interval: %v", cfg.ScrapeInterval)
 	log.Printf("  Custom Wallets: %d", len(cfg.CustomWallets))

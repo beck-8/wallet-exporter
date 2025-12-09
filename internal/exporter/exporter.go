@@ -26,6 +26,12 @@ type WalletInfo struct {
 	Description  string // Only for providers
 	FILBalance   *big.Int
 	USDFCBalance *big.Int
+
+	// Payments contract account info
+	PaymentsFunds          *big.Int // Total funds in Payments contract
+	PaymentsAvailable      *big.Int // Available funds (funds - actualLockup)
+	PaymentsLocked         *big.Int // Current locked funds
+	PaymentsFundedUntil    *big.Int // Epoch when funds run out (calculated)
 }
 
 type WalletExporter struct {
@@ -37,12 +43,16 @@ type WalletExporter struct {
 	usdfcContract       *contracts.ERC20
 
 	// Prometheus metrics
-	registry           *prometheus.Registry
-	filBalanceGauge    *prometheus.GaugeVec
-	usdfcBalanceGauge  *prometheus.GaugeVec
-	walletInfoGauge    *prometheus.GaugeVec
-	scrapeDuration     prometheus.Gauge
-	scrapeErrors       prometheus.Counter
+	registry                   *prometheus.Registry
+	filBalanceGauge            *prometheus.GaugeVec
+	usdfcBalanceGauge          *prometheus.GaugeVec
+	walletInfoGauge            *prometheus.GaugeVec
+	paymentsFundsGauge         *prometheus.GaugeVec
+	paymentsAvailableGauge     *prometheus.GaugeVec
+	paymentsLockedGauge        *prometheus.GaugeVec
+	paymentsFundedUntilGauge   *prometheus.GaugeVec
+	scrapeDuration             prometheus.Gauge
+	scrapeErrors               prometheus.Counter
 
 	// Cache
 	wallets      []WalletInfo
@@ -121,6 +131,38 @@ func New(cfg *config.Config) (*WalletExporter, error) {
 		[]string{"address", "name", "type", "provider_id", "description", "is_active", "approved"},
 	)
 
+	paymentsFundsGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_wallet_payments_funds", cfg.MetricsPrefix),
+			Help: "Total funds in Payments contract for each wallet",
+		},
+		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
+	)
+
+	paymentsAvailableGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_wallet_payments_available", cfg.MetricsPrefix),
+			Help: "Available funds in Payments contract (after lockup)",
+		},
+		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
+	)
+
+	paymentsLockedGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_wallet_payments_locked", cfg.MetricsPrefix),
+			Help: "Locked funds in Payments contract",
+		},
+		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
+	)
+
+	paymentsFundedUntilGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_wallet_payments_funded_until_epoch", cfg.MetricsPrefix),
+			Help: "Estimated epoch when Payments funds will run out",
+		},
+		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
+	)
+
 	scrapeDuration := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: fmt.Sprintf("%s_scrape_duration_seconds", cfg.MetricsPrefix),
@@ -139,23 +181,31 @@ func New(cfg *config.Config) (*WalletExporter, error) {
 	registry.MustRegister(filBalanceGauge)
 	registry.MustRegister(usdfcBalanceGauge)
 	registry.MustRegister(walletInfoGauge)
+	registry.MustRegister(paymentsFundsGauge)
+	registry.MustRegister(paymentsAvailableGauge)
+	registry.MustRegister(paymentsLockedGauge)
+	registry.MustRegister(paymentsFundedUntilGauge)
 	registry.MustRegister(scrapeDuration)
 	registry.MustRegister(scrapeErrors)
 
 	return &WalletExporter{
-		config:              cfg,
-		client:              client,
-		warmStorageContract: warmStorageContract,
-		viewContract:        viewContract,
-		registryContract:    registryContract,
-		usdfcContract:       usdfcContract,
-		registry:            registry,
-		filBalanceGauge:     filBalanceGauge,
-		usdfcBalanceGauge:   usdfcBalanceGauge,
-		walletInfoGauge:     walletInfoGauge,
-		scrapeDuration:      scrapeDuration,
-		scrapeErrors:        scrapeErrors,
-		wallets:             []WalletInfo{},
+		config:                   cfg,
+		client:                   client,
+		warmStorageContract:      warmStorageContract,
+		viewContract:             viewContract,
+		registryContract:         registryContract,
+		usdfcContract:            usdfcContract,
+		registry:                 registry,
+		filBalanceGauge:          filBalanceGauge,
+		usdfcBalanceGauge:        usdfcBalanceGauge,
+		walletInfoGauge:          walletInfoGauge,
+		paymentsFundsGauge:       paymentsFundsGauge,
+		paymentsAvailableGauge:   paymentsAvailableGauge,
+		paymentsLockedGauge:      paymentsLockedGauge,
+		paymentsFundedUntilGauge: paymentsFundedUntilGauge,
+		scrapeDuration:           scrapeDuration,
+		scrapeErrors:             scrapeErrors,
+		wallets:                  []WalletInfo{},
 	}, nil
 }
 
@@ -319,16 +369,32 @@ func (e *WalletExporter) fetchProviderWallet(ctx context.Context, providerID *bi
 		usdfcBalance = big.NewInt(0)
 	}
 
+	// Get Payments contract info
+	paymentsInfo, err := e.fetchPaymentsInfo(ctx, info.ServiceProvider)
+	if err != nil {
+		log.Printf("Warning: failed to get Payments info for %s: %v", info.ServiceProvider.Hex(), err)
+		paymentsInfo = &PaymentsInfo{
+			Funds:            big.NewInt(0),
+			Available:        big.NewInt(0),
+			Locked:           big.NewInt(0),
+			FundedUntilEpoch: big.NewInt(0),
+		}
+	}
+
 	return WalletInfo{
-		Address:      info.ServiceProvider,
-		Name:         info.Name,
-		Type:         "provider",
-		ProviderID:   providerID.Uint64(),
-		IsActive:     info.IsActive,
-		IsApproved:   isApproved,
-		Description:  info.Description,
-		FILBalance:   filBalance,
-		USDFCBalance: usdfcBalance,
+		Address:              info.ServiceProvider,
+		Name:                 info.Name,
+		Type:                 "provider",
+		ProviderID:           providerID.Uint64(),
+		IsActive:             info.IsActive,
+		IsApproved:           isApproved,
+		Description:          info.Description,
+		FILBalance:           filBalance,
+		USDFCBalance:         usdfcBalance,
+		PaymentsFunds:        paymentsInfo.Funds,
+		PaymentsAvailable:    paymentsInfo.Available,
+		PaymentsLocked:       paymentsInfo.Locked,
+		PaymentsFundedUntil:  paymentsInfo.FundedUntilEpoch,
 	}, nil
 }
 
@@ -393,16 +459,32 @@ func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.Custom
 		usdfcBalance = big.NewInt(0)
 	}
 
+	// Get Payments contract info
+	paymentsInfo, err := e.fetchPaymentsInfo(ctx, address)
+	if err != nil {
+		log.Printf("Warning: failed to get Payments info for %s: %v", address.Hex(), err)
+		paymentsInfo = &PaymentsInfo{
+			Funds:            big.NewInt(0),
+			Available:        big.NewInt(0),
+			Locked:           big.NewInt(0),
+			FundedUntilEpoch: big.NewInt(0),
+		}
+	}
+
 	return WalletInfo{
-		Address:      address,
-		Name:         cw.Name,
-		Type:         cw.Type,
-		ProviderID:   0,
-		IsActive:     false,
-		IsApproved:   false,
-		Description:  "",
-		FILBalance:   filBalance,
-		USDFCBalance: usdfcBalance,
+		Address:              address,
+		Name:                 cw.Name,
+		Type:                 cw.Type,
+		ProviderID:           0,
+		IsActive:             false,
+		IsApproved:           false,
+		Description:          "",
+		FILBalance:           filBalance,
+		USDFCBalance:         usdfcBalance,
+		PaymentsFunds:        paymentsInfo.Funds,
+		PaymentsAvailable:    paymentsInfo.Available,
+		PaymentsLocked:       paymentsInfo.Locked,
+		PaymentsFundedUntil:  paymentsInfo.FundedUntilEpoch,
 	}, nil
 }
 
@@ -411,6 +493,10 @@ func (e *WalletExporter) updateMetrics(wallets []WalletInfo) {
 	e.filBalanceGauge.Reset()
 	e.usdfcBalanceGauge.Reset()
 	e.walletInfoGauge.Reset()
+	e.paymentsFundsGauge.Reset()
+	e.paymentsAvailableGauge.Reset()
+	e.paymentsLockedGauge.Reset()
+	e.paymentsFundedUntilGauge.Reset()
 
 	for _, wallet := range wallets {
 		providerID := fmt.Sprintf("%d", wallet.ProviderID)
@@ -451,6 +537,29 @@ func (e *WalletExporter) updateMetrics(wallets []WalletInfo) {
 		).Float64()
 		e.usdfcBalanceGauge.With(labels).Set(usdfcFloat)
 
+		// Set Payments contract metrics (USDFC has 18 decimals)
+		paymentsFundsFloat, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(wallet.PaymentsFunds),
+			big.NewFloat(1e18),
+		).Float64()
+		e.paymentsFundsGauge.With(labels).Set(paymentsFundsFloat)
+
+		paymentsAvailableFloat, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(wallet.PaymentsAvailable),
+			big.NewFloat(1e18),
+		).Float64()
+		e.paymentsAvailableGauge.With(labels).Set(paymentsAvailableFloat)
+
+		paymentsLockedFloat, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(wallet.PaymentsLocked),
+			big.NewFloat(1e18),
+		).Float64()
+		e.paymentsLockedGauge.With(labels).Set(paymentsLockedFloat)
+
+		// PaymentsFundedUntil is an epoch (block number), not a token amount
+		paymentsFundedUntilFloat, _ := new(big.Float).SetInt(wallet.PaymentsFundedUntil).Float64()
+		e.paymentsFundedUntilGauge.With(labels).Set(paymentsFundedUntilFloat)
+
 		// Set info metric
 		infoLabels := prometheus.Labels{
 			"address":     wallet.Address.Hex(),
@@ -486,3 +595,55 @@ func (e *WalletExporter) Close() {
 		e.client.Close()
 	}
 }
+
+// PaymentsInfo holds the calculated Payments contract account information
+type PaymentsInfo struct {
+	Funds             *big.Int // Total funds in contract
+	Available         *big.Int // Available funds (funds - actualLockup)
+	Locked            *big.Int // Current locked funds
+	FundedUntilEpoch  *big.Int // Estimated epoch when funds run out
+}
+
+// fetchPaymentsInfo fetches account info from Payments contract using getAccountInfoIfSettled
+func (e *WalletExporter) fetchPaymentsInfo(ctx context.Context, address common.Address) (*PaymentsInfo, error) {
+	usdfcAddr := common.HexToAddress(e.config.USDFCTokenAddress)
+	paymentsAddr := common.HexToAddress(e.config.PaymentsAddress)
+
+	// Create Payments contract instance using abigen generated binding
+	paymentsContract, err := contracts.NewPaymentsCaller(paymentsAddr, e.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Payments contract: %w", err)
+	}
+
+	// Call getAccountInfoIfSettled - type-safe method from abigen
+	result, err := paymentsContract.GetAccountInfoIfSettled(nil, usdfcAddr, address)
+	if err != nil {
+		// Handle error - might be account doesn't exist
+		return &PaymentsInfo{
+			Funds:            big.NewInt(0),
+			Available:        big.NewInt(0),
+			Locked:           big.NewInt(0),
+			FundedUntilEpoch: big.NewInt(0),
+		}, nil
+	}
+
+	// Extract values from the result struct
+	fundedUntilEpoch := result.FundedUntilEpoch
+	currentFunds := result.CurrentFunds
+	availableFunds := result.AvailableFunds
+	// currentLockupRate := result.CurrentLockupRate // not needed for now
+
+	// Calculate locked amount: locked = currentFunds - availableFunds
+	locked := new(big.Int).Sub(currentFunds, availableFunds)
+	if locked.Cmp(big.NewInt(0)) < 0 {
+		locked = big.NewInt(0)
+	}
+
+	return &PaymentsInfo{
+		Funds:            currentFunds,
+		Available:        availableFunds,
+		Locked:           locked,
+		FundedUntilEpoch: fundedUntilEpoch,
+	}, nil
+}
+

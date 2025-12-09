@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/ethereum/go-ethereum v1.13.8
+	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.18.0
 )
 
@@ -24,7 +25,6 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect

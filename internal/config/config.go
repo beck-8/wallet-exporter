@@ -15,6 +15,7 @@ type Config struct {
 	RPCURL                string
 	WarmStorageAddress    string
 	USDFCTokenAddress     string
+	PaymentsAddress       string
 	CustomWallets         []CustomWallet
 	ExporterPort          int
 	ScrapeInterval        time.Duration
@@ -33,10 +34,22 @@ func Load() (*Config, error) {
 	// Try to load .env file (ignore error if file doesn't exist)
 	_ = godotenv.Load()
 
-	// Default USDFC addresses per network
+	// Default addresses per network
+	// Official contract addresses from Filecoin Synapse
+	defaultWarmStorage := map[string]string{
+		"calibration": "0x02925630df557F957f70E112bA06e50965417CA0",
+		"mainnet":     "0x8408502033C418E1bbC97cE9ac48E5528F371A9f",
+	}
+
 	defaultUSDFC := map[string]string{
 		"calibration": "0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0",
 		"mainnet":     "0x80B98d3aa09ffff255c3ba4A241111Ff1262F045",
+	}
+
+	// Filecoin Pay contract (Payments)
+	defaultPayments := map[string]string{
+		"calibration": "0x09a0fDc2723fAd1A7b8e3e00eE5DF73841df55a0",
+		"mainnet":     "0x23b1e018F08BB982348b15a86ee926eEBf7F4DAa",
 	}
 
 	network := getEnv("NETWORK", "calibration")
@@ -44,8 +57,9 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Network:               network,
 		RPCURL:                getEnv("RPC_URL", "https://api.calibration.node.glif.io/rpc/v1"),
-		WarmStorageAddress:    getEnv("WARM_STORAGE_ADDRESS", "0x80617b65FD2EEa1D7fDe2B4F85977670690ed348"),
+		WarmStorageAddress:    getEnv("WARM_STORAGE_ADDRESS", defaultWarmStorage[network]),
 		USDFCTokenAddress:     getEnv("USDFC_TOKEN_ADDRESS", defaultUSDFC[network]),
+		PaymentsAddress:       getEnv("PAYMENTS_ADDRESS", defaultPayments[network]),
 		CustomWallets:         parseCustomWallets(),
 		ExporterPort:          getEnvInt("EXPORTER_PORT", 9091),
 		ScrapeInterval:        getEnvDuration("SCRAPE_INTERVAL", 60*time.Second),

@@ -1,0 +1,35 @@
+[
+  {
+    "type": "function",
+    "name": "getAccountInfoIfSettled",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "fundedUntilEpoch",
+        "type": "uint256"
+      },
+      {
+        "name": "currentFunds",
+        "type": "uint256"
+      },
+      {
+        "name": "availableFunds",
+        "type": "uint256"
+      },
+      {
+        "name": "currentLockupRate",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  }
+]
