@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"math/big"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,10 +31,10 @@ type WalletInfo struct {
 	USDFCBalance *big.Int
 
 	// Payments contract account info
-	PaymentsFunds          *big.Int // Total funds in Payments contract
-	PaymentsAvailable      *big.Int // Available funds (funds - actualLockup)
-	PaymentsLocked         *big.Int // Current locked funds
-	PaymentsFundedUntil    *big.Int // Epoch when funds run out (calculated)
+	PaymentsFunds       *big.Int // Total funds in Payments contract
+	PaymentsAvailable   *big.Int // Available funds (funds - actualLockup)
+	PaymentsLocked      *big.Int // Current locked funds
+	PaymentsFundedUntil *big.Int // Epoch when funds run out (calculated)
 }
 
 type WalletExporter struct {
@@ -43,24 +46,30 @@ type WalletExporter struct {
 	usdfcContract       *contracts.ERC20
 
 	// Prometheus metrics
-	registry                   *prometheus.Registry
-	filBalanceGauge            *prometheus.GaugeVec
-	usdfcBalanceGauge          *prometheus.GaugeVec
-	walletInfoGauge            *prometheus.GaugeVec
-	paymentsFundsGauge         *prometheus.GaugeVec
-	paymentsAvailableGauge     *prometheus.GaugeVec
-	paymentsLockedGauge        *prometheus.GaugeVec
-	paymentsFundedUntilGauge   *prometheus.GaugeVec
-	scrapeDuration             prometheus.Gauge
-	scrapeErrors               prometheus.Counter
+	registry                 *prometheus.Registry
+	filBalanceGauge          *prometheus.GaugeVec
+	usdfcBalanceGauge        *prometheus.GaugeVec
+	walletInfoGauge          *prometheus.GaugeVec
+	paymentsFundsGauge       *prometheus.GaugeVec
+	paymentsAvailableGauge   *prometheus.GaugeVec
+	paymentsLockedGauge      *prometheus.GaugeVec
+	paymentsFundedUntilGauge *prometheus.GaugeVec
+	scrapeDuration           prometheus.Gauge
+	scrapeErrors             prometheus.Counter
 
 	// Cache
-	wallets      []WalletInfo
-	walletsMux   sync.RWMutex
-	lastScrape   time.Time
+	wallets    []WalletInfo
+	walletsMux sync.RWMutex
+	lastScrape time.Time
+
+	// Ping metrics
+	pingSuccessGauge  *prometheus.GaugeVec
+	pingDurationGauge *prometheus.GaugeVec
+
+	logger *slog.Logger
 }
 
-func New(cfg *config.Config) (*WalletExporter, error) {
+func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
 	// Connect to Ethereum client
 	client, err := ethclient.Dial(cfg.RPCURL)
 	if err != nil {
@@ -177,6 +186,22 @@ func New(cfg *config.Config) (*WalletExporter, error) {
 		},
 	)
 
+	pingSuccessGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_provider_ping_success", cfg.MetricsPrefix),
+			Help: "1 if the provider ping was successful (HTTP 200), 0 otherwise",
+		},
+		[]string{"address", "name", "provider_id"},
+	)
+
+	pingDurationGauge := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: fmt.Sprintf("%s_provider_ping_ms", cfg.MetricsPrefix),
+			Help: "Duration of the ping request in milliseconds",
+		},
+		[]string{"address", "name", "provider_id"},
+	)
+
 	// Register metrics with custom registry
 	registry.MustRegister(filBalanceGauge)
 	registry.MustRegister(usdfcBalanceGauge)
@@ -187,6 +212,8 @@ func New(cfg *config.Config) (*WalletExporter, error) {
 	registry.MustRegister(paymentsFundedUntilGauge)
 	registry.MustRegister(scrapeDuration)
 	registry.MustRegister(scrapeErrors)
+	registry.MustRegister(pingSuccessGauge)
+	registry.MustRegister(pingDurationGauge)
 
 	return &WalletExporter{
 		config:                   cfg,
@@ -205,16 +232,19 @@ func New(cfg *config.Config) (*WalletExporter, error) {
 		paymentsFundedUntilGauge: paymentsFundedUntilGauge,
 		scrapeDuration:           scrapeDuration,
 		scrapeErrors:             scrapeErrors,
+		pingSuccessGauge:         pingSuccessGauge,
+		pingDurationGauge:        pingDurationGauge,
 		wallets:                  []WalletInfo{},
+		logger:                   logger,
 	}, nil
 }
 
 func (e *WalletExporter) Start(ctx context.Context) error {
-	log.Printf("Starting wallet exporter with scrape interval: %v", e.config.ScrapeInterval)
+	e.logger.Info("Starting wallet exporter", "scrape_interval", e.config.ScrapeInterval)
 
 	// Initial scrape
 	if err := e.scrape(ctx); err != nil {
-		log.Printf("Initial scrape failed: %v", err)
+		e.logger.Error("Initial scrape failed", "error", err)
 		e.scrapeErrors.Inc()
 	}
 
@@ -225,11 +255,11 @@ func (e *WalletExporter) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Stopping wallet exporter")
+			e.logger.Info("Stopping wallet exporter")
 			return ctx.Err()
 		case <-ticker.C:
 			if err := e.scrape(ctx); err != nil {
-				log.Printf("Scrape failed: %v", err)
+				e.logger.Error("Scrape failed", "error", err)
 				e.scrapeErrors.Inc()
 			}
 		}
@@ -242,29 +272,32 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 		duration := time.Since(start).Seconds()
 		e.scrapeDuration.Set(duration)
 		e.lastScrape = time.Now()
-		log.Printf("Scrape completed in %.2fs", duration)
+		e.logger.Info("Scrape completed", "duration_seconds", duration)
 	}()
 
-	log.Println("Starting scrape...")
+	e.logger.Info("Starting scrape...")
 
 	var allWallets []WalletInfo
 
 	// 1. Fetch storage provider wallets
 	providerWallets, err := e.fetchProviderWallets(ctx)
 	if err != nil {
-		log.Printf("Warning: failed to fetch provider wallets: %v", err)
+		e.logger.Warn("Failed to fetch provider wallets", "error", err)
 	} else {
 		allWallets = append(allWallets, providerWallets...)
-		log.Printf("Found %d storage providers", len(providerWallets))
+		e.logger.Info("Found storage providers", "count", len(providerWallets))
+
+		// Start concurrent pings for providers
+		go e.pingProviders(ctx, providerWallets)
 	}
 
 	// 2. Fetch custom wallets
 	customWallets, err := e.fetchCustomWallets(ctx)
 	if err != nil {
-		log.Printf("Warning: failed to fetch custom wallets: %v", err)
+		e.logger.Warn("Failed to fetch custom wallets", "error", err)
 	} else {
 		allWallets = append(allWallets, customWallets...)
-		log.Printf("Found %d custom wallets", len(customWallets))
+		e.logger.Info("Found custom wallets", "count", len(customWallets))
 	}
 
 	// Update cache
@@ -275,7 +308,7 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	// Update Prometheus metrics
 	e.updateMetrics(allWallets)
 
-	log.Printf("Successfully scraped %d total wallets", len(allWallets))
+	e.logger.Info("Successfully scraped total wallets", "count", len(allWallets))
 	return nil
 }
 
@@ -289,7 +322,7 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 	// Get approved provider IDs for checking
 	approvedIDs, err := e.viewContract.GetApprovedProviders(nil, big.NewInt(0), big.NewInt(0))
 	if err != nil {
-		log.Printf("Warning: failed to get approved providers: %v", err)
+		e.logger.Warn("Failed to get approved providers", "error", err)
 		approvedIDs = []*big.Int{} // Continue with empty approved list
 	}
 
@@ -299,7 +332,7 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 		approvedMap[id.Uint64()] = true
 	}
 
-	log.Printf("Found %d total providers, %d approved", providerCount.Uint64(), len(approvedIDs))
+	e.logger.Info("Provider count stats", "total", providerCount.Uint64(), "approved", len(approvedIDs))
 
 	// Fetch all providers (provider IDs start from 1)
 	wallets := make([]WalletInfo, 0, int(providerCount.Int64()))
@@ -340,7 +373,7 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 
 	// Log any errors
 	for err := range errorChan {
-		log.Printf("Warning: %v", err)
+		e.logger.Warn("Provider fetch warning", "error", err)
 	}
 
 	return wallets, nil
@@ -365,14 +398,14 @@ func (e *WalletExporter) fetchProviderWallet(ctx context.Context, providerID *bi
 	// Get USDFC balance
 	usdfcBalance, err := e.usdfcContract.BalanceOf(nil, info.ServiceProvider)
 	if err != nil {
-		log.Printf("Warning: failed to get USDFC balance for %s: %v", info.ServiceProvider.Hex(), err)
+		e.logger.Warn("Failed to get USDFC balance", "address", info.ServiceProvider.Hex(), "error", err)
 		usdfcBalance = big.NewInt(0)
 	}
 
 	// Get Payments contract info
 	paymentsInfo, err := e.fetchPaymentsInfo(ctx, info.ServiceProvider)
 	if err != nil {
-		log.Printf("Warning: failed to get Payments info for %s: %v", info.ServiceProvider.Hex(), err)
+		e.logger.Warn("Failed to get Payments info", "address", info.ServiceProvider.Hex(), "error", err)
 		paymentsInfo = &PaymentsInfo{
 			Funds:            big.NewInt(0),
 			Available:        big.NewInt(0),
@@ -382,19 +415,19 @@ func (e *WalletExporter) fetchProviderWallet(ctx context.Context, providerID *bi
 	}
 
 	return WalletInfo{
-		Address:              info.ServiceProvider,
-		Name:                 info.Name,
-		Type:                 "provider",
-		ProviderID:           providerID.Uint64(),
-		IsActive:             info.IsActive,
-		IsApproved:           isApproved,
-		Description:          info.Description,
-		FILBalance:           filBalance,
-		USDFCBalance:         usdfcBalance,
-		PaymentsFunds:        paymentsInfo.Funds,
-		PaymentsAvailable:    paymentsInfo.Available,
-		PaymentsLocked:       paymentsInfo.Locked,
-		PaymentsFundedUntil:  paymentsInfo.FundedUntilEpoch,
+		Address:             info.ServiceProvider,
+		Name:                info.Name,
+		Type:                "provider",
+		ProviderID:          providerID.Uint64(),
+		IsActive:            info.IsActive,
+		IsApproved:          isApproved,
+		Description:         info.Description,
+		FILBalance:          filBalance,
+		USDFCBalance:        usdfcBalance,
+		PaymentsFunds:       paymentsInfo.Funds,
+		PaymentsAvailable:   paymentsInfo.Available,
+		PaymentsLocked:      paymentsInfo.Locked,
+		PaymentsFundedUntil: paymentsInfo.FundedUntilEpoch,
 	}, nil
 }
 
@@ -455,14 +488,14 @@ func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.Custom
 	// Get USDFC balance
 	usdfcBalance, err := e.usdfcContract.BalanceOf(nil, address)
 	if err != nil {
-		log.Printf("Warning: failed to get USDFC balance for %s: %v", address.Hex(), err)
+		e.logger.Warn("Failed to get USDFC balance", "address", address.Hex(), "error", err)
 		usdfcBalance = big.NewInt(0)
 	}
 
 	// Get Payments contract info
 	paymentsInfo, err := e.fetchPaymentsInfo(ctx, address)
 	if err != nil {
-		log.Printf("Warning: failed to get Payments info for %s: %v", address.Hex(), err)
+		e.logger.Warn("Failed to get Payments info", "address", address.Hex(), "error", err)
 		paymentsInfo = &PaymentsInfo{
 			Funds:            big.NewInt(0),
 			Available:        big.NewInt(0),
@@ -472,19 +505,19 @@ func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.Custom
 	}
 
 	return WalletInfo{
-		Address:              address,
-		Name:                 cw.Name,
-		Type:                 cw.Type,
-		ProviderID:           0,
-		IsActive:             false,
-		IsApproved:           false,
-		Description:          "",
-		FILBalance:           filBalance,
-		USDFCBalance:         usdfcBalance,
-		PaymentsFunds:        paymentsInfo.Funds,
-		PaymentsAvailable:    paymentsInfo.Available,
-		PaymentsLocked:       paymentsInfo.Locked,
-		PaymentsFundedUntil:  paymentsInfo.FundedUntilEpoch,
+		Address:             address,
+		Name:                cw.Name,
+		Type:                cw.Type,
+		ProviderID:          0,
+		IsActive:            false,
+		IsApproved:          false,
+		Description:         "",
+		FILBalance:          filBalance,
+		USDFCBalance:        usdfcBalance,
+		PaymentsFunds:       paymentsInfo.Funds,
+		PaymentsAvailable:   paymentsInfo.Available,
+		PaymentsLocked:      paymentsInfo.Locked,
+		PaymentsFundedUntil: paymentsInfo.FundedUntilEpoch,
 	}, nil
 }
 
@@ -598,10 +631,10 @@ func (e *WalletExporter) Close() {
 
 // PaymentsInfo holds the calculated Payments contract account information
 type PaymentsInfo struct {
-	Funds             *big.Int // Total funds in contract
-	Available         *big.Int // Available funds (funds - actualLockup)
-	Locked            *big.Int // Current locked funds
-	FundedUntilEpoch  *big.Int // Estimated epoch when funds run out
+	Funds            *big.Int // Total funds in contract
+	Available        *big.Int // Available funds (funds - actualLockup)
+	Locked           *big.Int // Current locked funds
+	FundedUntilEpoch *big.Int // Estimated epoch when funds run out
 }
 
 // fetchPaymentsInfo fetches account info from Payments contract using getAccountInfoIfSettled
@@ -647,3 +680,97 @@ func (e *WalletExporter) fetchPaymentsInfo(ctx context.Context, address common.A
 	}, nil
 }
 
+// pingProviders pings all providers concurrently
+func (e *WalletExporter) pingProviders(ctx context.Context, providers []WalletInfo) {
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, e.config.MaxConcurrentRequests)
+
+	for _, p := range providers {
+		// specific check for provider ID > 0 just in case
+		if p.ProviderID == 0 {
+			continue
+		}
+
+		wg.Add(1)
+		go func(p WalletInfo) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			e.pingProvider(ctx, p)
+		}(p)
+	}
+
+	wg.Wait()
+}
+
+func (e *WalletExporter) pingProvider(ctx context.Context, p WalletInfo) {
+	labels := prometheus.Labels{
+		"address":     p.Address.Hex(),
+		"name":        p.Name,
+		"provider_id": fmt.Sprintf("%d", p.ProviderID),
+	}
+
+	// 1. Get Provider with Product (Product Type 0 for PDP)
+	// We use the generated struct directly
+	result, err := e.registryContract.GetProviderWithProduct(nil, big.NewInt(int64(p.ProviderID)), 0)
+	if err != nil {
+		// Log detailed error to debug
+		e.logger.Debug("Failed to get PDP product", "provider_id", p.ProviderID, "error", err)
+		return
+	}
+
+	// Check if product is active
+	if !result.Product.IsActive {
+		// log.Printf("Debug: Provider %d PDP product is inactive", p.ProviderID)
+		return
+	}
+
+	// 2. Decode Capabilities to find Service URL
+	var serviceURL string
+	for i, key := range result.Product.CapabilityKeys {
+		if key == "serviceURL" {
+			if i < len(result.ProductCapabilityValues) {
+				serviceURL = string(result.ProductCapabilityValues[i])
+			}
+			break
+		}
+	}
+
+	if serviceURL == "" {
+		e.logger.Debug("PDP product has no serviceURL", "provider_id", p.ProviderID)
+		return
+	}
+
+	e.logger.Debug("Found serviceURL", "provider_id", p.ProviderID, "url", serviceURL)
+
+	// 3. Ping
+	// Remove trailing slash if present
+	baseURL := strings.TrimRight(serviceURL, "/")
+	pingURL := baseURL + "/pdp/ping"
+
+	client := http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	start := time.Now()
+	resp, err := client.Get(pingURL)
+	duration := time.Since(start)
+
+	// Record duration in ms
+	e.pingDurationGauge.With(labels).Set(float64(duration.Milliseconds()))
+
+	if err != nil {
+		e.logger.Warn("Ping failed", "provider_id", p.ProviderID, "name", p.Name, "url", pingURL, "error", err)
+		e.pingSuccessGauge.With(labels).Set(0)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		e.pingSuccessGauge.With(labels).Set(1)
+	} else {
+		e.logger.Warn("Ping returned non-200 status", "status", resp.StatusCode, "provider_id", p.ProviderID, "name", p.Name, "url", pingURL)
+		e.pingSuccessGauge.With(labels).Set(0)
+	}
+}

@@ -1,13 +1,305 @@
 [
   {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
     "type": "function",
     "inputs": [],
-    "name": "getProviderCount",
+    "name": "MAX_CAPABILITIES",
     "outputs": [
       {
         "name": "",
         "internalType": "uint256",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "MAX_CAPABILITY_KEY_LENGTH",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "MAX_CAPABILITY_VALUE_LENGTH",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "REGISTRATION_FEE",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "string",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "VERSION",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "string",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "activeProductTypeProviderCount",
+    "outputs": [
+      {
+        "name": "count",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "activeProviderCount",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "capabilityKeys",
+        "internalType": "string[]",
+        "type": "string[]"
+      },
+      {
+        "name": "capabilityValues",
+        "internalType": "bytes[]",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "addProduct",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerAddress",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "addressToProviderId",
+    "outputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "name": "fields",
+        "internalType": "bytes1",
+        "type": "bytes1"
+      },
+      {
+        "name": "name",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "chainId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "verifyingContract",
+        "internalType": "address",
+        "type": "address"
+      },
+      {
+        "name": "salt",
+        "internalType": "bytes32",
+        "type": "bytes32"
+      },
+      {
+        "name": "extensions",
+        "internalType": "uint256[]",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "offset",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "getAllActiveProviders",
+    "outputs": [
+      {
+        "name": "providerIds",
+        "internalType": "uint256[]",
+        "type": "uint256[]"
+      },
+      {
+        "name": "hasMore",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "getAllProductCapabilities",
+    "outputs": [
+      {
+        "name": "isActive",
+        "internalType": "bool",
+        "type": "bool"
+      },
+      {
+        "name": "keys",
+        "internalType": "string[]",
+        "type": "string[]"
+      },
+      {
+        "name": "values",
+        "internalType": "bytes[]",
+        "type": "bytes[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "getNextProviderId",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "keys",
+        "internalType": "string[]",
+        "type": "string[]"
+      }
+    ],
+    "name": "getProductCapabilities",
+    "outputs": [
+      {
+        "name": "values",
+        "internalType": "bytes[]",
+        "type": "bytes[]"
       }
     ],
     "stateMutability": "view"
@@ -74,36 +366,1046 @@
     "type": "function",
     "inputs": [
       {
+        "name": "providerAddress",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "getProviderByAddress",
+    "outputs": [
+      {
+        "name": "info",
+        "internalType": "struct ServiceProviderRegistry.ServiceProviderInfoView",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "providerId",
+            "internalType": "uint256",
+            "type": "uint256"
+          },
+          {
+            "name": "info",
+            "internalType": "struct ServiceProviderRegistryStorage.ServiceProviderInfo",
+            "type": "tuple",
+            "components": [
+              {
+                "name": "serviceProvider",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "payee",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "name",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "description",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "isActive",
+                "internalType": "bool",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "getProviderCount",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerAddress",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "getProviderIdByAddress",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "getProviderPayee",
+    "outputs": [
+      {
+        "name": "payee",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
         "name": "providerId",
         "internalType": "uint256",
         "type": "uint256"
       },
       {
         "name": "productType",
-        "internalType": "uint8",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
         "type": "uint8"
       }
     ],
-    "name": "getProduct",
+    "name": "getProviderWithProduct",
     "outputs": [
       {
-        "name": "product",
-        "internalType": "struct ServiceProviderRegistryStorage.ProductInfo",
+        "name": "",
+        "internalType": "struct ServiceProviderRegistryStorage.ProviderWithProduct",
         "type": "tuple",
         "components": [
           {
-            "name": "isActive",
-            "internalType": "bool",
-            "type": "bool"
+            "name": "providerId",
+            "internalType": "uint256",
+            "type": "uint256"
           },
           {
-            "name": "productData",
-            "internalType": "bytes",
-            "type": "bytes"
+            "name": "providerInfo",
+            "internalType": "struct ServiceProviderRegistryStorage.ServiceProviderInfo",
+            "type": "tuple",
+            "components": [
+              {
+                "name": "serviceProvider",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "payee",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "name",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "description",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "isActive",
+                "internalType": "bool",
+                "type": "bool"
+              }
+            ]
+          },
+          {
+            "name": "product",
+            "internalType": "struct ServiceProviderRegistryStorage.ServiceProduct",
+            "type": "tuple",
+            "components": [
+              {
+                "name": "productType",
+                "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+                "type": "uint8"
+              },
+              {
+                "name": "capabilityKeys",
+                "internalType": "string[]",
+                "type": "string[]"
+              },
+              {
+                "name": "isActive",
+                "internalType": "bool",
+                "type": "bool"
+              }
+            ]
+          },
+          {
+            "name": "productCapabilityValues",
+            "internalType": "bytes[]",
+            "type": "bytes[]"
           }
         ]
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerIds",
+        "internalType": "uint256[]",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "getProvidersByIds",
+    "outputs": [
+      {
+        "name": "providerInfos",
+        "internalType": "struct ServiceProviderRegistry.ServiceProviderInfoView[]",
+        "type": "tuple[]",
+        "components": [
+          {
+            "name": "providerId",
+            "internalType": "uint256",
+            "type": "uint256"
+          },
+          {
+            "name": "info",
+            "internalType": "struct ServiceProviderRegistryStorage.ServiceProviderInfo",
+            "type": "tuple",
+            "components": [
+              {
+                "name": "serviceProvider",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "payee",
+                "internalType": "address",
+                "type": "address"
+              },
+              {
+                "name": "name",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "description",
+                "internalType": "string",
+                "type": "string"
+              },
+              {
+                "name": "isActive",
+                "internalType": "bool",
+                "type": "bool"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "validIds",
+        "internalType": "bool[]",
+        "type": "bool[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "onlyActive",
+        "internalType": "bool",
+        "type": "bool"
+      },
+      {
+        "name": "offset",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "limit",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "getProvidersByProductType",
+    "outputs": [
+      {
+        "name": "result",
+        "internalType": "struct ServiceProviderRegistryStorage.PaginatedProviders",
+        "type": "tuple",
+        "components": [
+          {
+            "name": "providers",
+            "internalType": "struct ServiceProviderRegistryStorage.ProviderWithProduct[]",
+            "type": "tuple[]",
+            "components": [
+              {
+                "name": "providerId",
+                "internalType": "uint256",
+                "type": "uint256"
+              },
+              {
+                "name": "providerInfo",
+                "internalType": "struct ServiceProviderRegistryStorage.ServiceProviderInfo",
+                "type": "tuple",
+                "components": [
+                  {
+                    "name": "serviceProvider",
+                    "internalType": "address",
+                    "type": "address"
+                  },
+                  {
+                    "name": "payee",
+                    "internalType": "address",
+                    "type": "address"
+                  },
+                  {
+                    "name": "name",
+                    "internalType": "string",
+                    "type": "string"
+                  },
+                  {
+                    "name": "description",
+                    "internalType": "string",
+                    "type": "string"
+                  },
+                  {
+                    "name": "isActive",
+                    "internalType": "bool",
+                    "type": "bool"
+                  }
+                ]
+              },
+              {
+                "name": "product",
+                "internalType": "struct ServiceProviderRegistryStorage.ServiceProduct",
+                "type": "tuple",
+                "components": [
+                  {
+                    "name": "productType",
+                    "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+                    "type": "uint8"
+                  },
+                  {
+                    "name": "capabilityKeys",
+                    "internalType": "string[]",
+                    "type": "string[]"
+                  },
+                  {
+                    "name": "isActive",
+                    "internalType": "bool",
+                    "type": "bool"
+                  }
+                ]
+              },
+              {
+                "name": "productCapabilityValues",
+                "internalType": "bytes[]",
+                "type": "bytes[]"
+              }
+            ]
+          },
+          {
+            "name": "hasMore",
+            "internalType": "bool",
+            "type": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "isProviderActive",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "provider",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "isRegisteredProvider",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "newVersion",
+        "internalType": "string",
+        "type": "string"
+      }
+    ],
+    "name": "migrate",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "key",
+        "internalType": "string",
+        "type": "string"
+      }
+    ],
+    "name": "productCapabilities",
+    "outputs": [
+      {
+        "name": "value",
+        "internalType": "bytes",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "productTypeProviderCount",
+    "outputs": [
+      {
+        "name": "count",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "providerHasProduct",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "providerProducts",
+    "outputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "isActive",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "name": "providers",
+    "outputs": [
+      {
+        "name": "serviceProvider",
+        "internalType": "address",
+        "type": "address"
+      },
+      {
+        "name": "payee",
+        "internalType": "address",
+        "type": "address"
+      },
+      {
+        "name": "name",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "isActive",
+        "internalType": "bool",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "proxiableUUID",
+    "outputs": [
+      {
+        "name": "",
+        "internalType": "bytes32",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "payee",
+        "internalType": "address",
+        "type": "address"
+      },
+      {
+        "name": "name",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "capabilityKeys",
+        "internalType": "string[]",
+        "type": "string[]"
+      },
+      {
+        "name": "capabilityValues",
+        "internalType": "bytes[]",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "registerProvider",
+    "outputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "removeProduct",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "removeProvider",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      },
+      {
+        "name": "capabilityKeys",
+        "internalType": "string[]",
+        "type": "string[]"
+      },
+      {
+        "name": "capabilityValues",
+        "internalType": "bytes[]",
+        "type": "bytes[]"
+      }
+    ],
+    "name": "updateProduct",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "name",
+        "internalType": "string",
+        "type": "string"
+      },
+      {
+        "name": "description",
+        "internalType": "string",
+        "type": "string"
+      }
+    ],
+    "name": "updateProviderInfo",
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "internalType": "address",
+        "type": "address"
+      },
+      {
+        "name": "data",
+        "internalType": "bytes",
+        "type": "bytes"
+      }
+    ],
+    "name": "upgradeToAndCall",
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "version",
+        "internalType": "string",
+        "type": "string",
+        "indexed": false
+      },
+      {
+        "name": "implementation",
+        "internalType": "address",
+        "type": "address",
+        "indexed": false
+      }
+    ],
+    "name": "ContractUpgraded"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [],
+    "name": "EIP712DomainChanged"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "version",
+        "internalType": "uint64",
+        "type": "uint64",
+        "indexed": false
+      }
+    ],
+    "name": "Initialized"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "internalType": "address",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "newOwner",
+        "internalType": "address",
+        "type": "address",
+        "indexed": true
+      }
+    ],
+    "name": "OwnershipTransferred"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8",
+        "indexed": true
+      },
+      {
+        "name": "serviceProvider",
+        "internalType": "address",
+        "type": "address",
+        "indexed": false
+      },
+      {
+        "name": "capabilityKeys",
+        "internalType": "string[]",
+        "type": "string[]",
+        "indexed": false
+      },
+      {
+        "name": "capabilityValues",
+        "internalType": "bytes[]",
+        "type": "bytes[]",
+        "indexed": false
+      }
+    ],
+    "name": "ProductAdded"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8",
+        "indexed": true
+      }
+    ],
+    "name": "ProductRemoved"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8",
+        "indexed": true
+      },
+      {
+        "name": "serviceProvider",
+        "internalType": "address",
+        "type": "address",
+        "indexed": false
+      },
+      {
+        "name": "capabilityKeys",
+        "internalType": "string[]",
+        "type": "string[]",
+        "indexed": false
+      },
+      {
+        "name": "capabilityValues",
+        "internalType": "bytes[]",
+        "type": "bytes[]",
+        "indexed": false
+      }
+    ],
+    "name": "ProductUpdated"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      }
+    ],
+    "name": "ProviderInfoUpdated"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "serviceProvider",
+        "internalType": "address",
+        "type": "address",
+        "indexed": true
+      },
+      {
+        "name": "payee",
+        "internalType": "address",
+        "type": "address",
+        "indexed": true
+      }
+    ],
+    "name": "ProviderRegistered"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "providerId",
+        "internalType": "uint256",
+        "type": "uint256",
+        "indexed": true
+      }
+    ],
+    "name": "ProviderRemoved"
+  },
+  {
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "implementation",
+        "internalType": "address",
+        "type": "address",
+        "indexed": true
+      }
+    ],
+    "name": "Upgraded"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "target",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "AddressEmptyCode"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "implementation",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1967InvalidImplementation"
+  },
+  {
+    "type": "error",
+    "inputs": [],
+    "name": "ERC1967NonPayable"
+  },
+  {
+    "type": "error",
+    "inputs": [],
+    "name": "FailedCall"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "productType",
+        "internalType": "enum ServiceProviderRegistryStorage.ProductType",
+        "type": "uint8"
+      }
+    ],
+    "name": "InsufficientCapabilitiesForProduct"
+  },
+  {
+    "type": "error",
+    "inputs": [],
+    "name": "InvalidInitialization"
+  },
+  {
+    "type": "error",
+    "inputs": [],
+    "name": "NotInitializing"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "owner",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableInvalidOwner"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "account",
+        "internalType": "address",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableUnauthorizedAccount"
+  },
+  {
+    "type": "error",
+    "inputs": [],
+    "name": "UUPSUnauthorizedCallContext"
+  },
+  {
+    "type": "error",
+    "inputs": [
+      {
+        "name": "slot",
+        "internalType": "bytes32",
+        "type": "bytes32"
+      }
+    ],
+    "name": "UUPSUnsupportedProxiableUUID"
   }
 ]

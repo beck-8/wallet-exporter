@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -40,8 +41,6 @@ func main() {
 		}
 	}()
 
-	log.Println("Starting Dealbot Wallet Exporter...")
-
 	// Load configuration
 	log.Println("Loading configuration...")
 	cfg, err := config.Load()
@@ -49,21 +48,42 @@ func main() {
 		log.Fatalf("❌ Failed to load configuration: %v", err)
 	}
 
-	log.Println("✓ Configuration loaded successfully")
-	log.Printf("  Network: %s", cfg.Network)
-	log.Printf("  RPC URL: %s", cfg.RPCURL)
-	log.Printf("  Warm Storage Address: %s", cfg.WarmStorageAddress)
-	log.Printf("  USDFC Token Address: %s", cfg.USDFCTokenAddress)
-	log.Printf("  Payments Address: %s", cfg.PaymentsAddress)
-	log.Printf("  Exporter Port: %d", cfg.ExporterPort)
-	log.Printf("  Scrape Interval: %v", cfg.ScrapeInterval)
-	log.Printf("  Custom Wallets: %d", len(cfg.CustomWallets))
+	// Initialize structured logger
+	var level slog.Level
+	switch cfg.LogLevel {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: level,
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
+
+	logger.Info("Starting Dealbot Wallet Exporter...")
+	logger.Info("Configuration loaded successfully",
+		"network", cfg.Network,
+		"rpc_url", cfg.RPCURL,
+		"warm_storage_addr", cfg.WarmStorageAddress,
+		"usdfc_token_addr", cfg.USDFCTokenAddress,
+		"payments_addr", cfg.PaymentsAddress,
+		"exporter_port", cfg.ExporterPort,
+		"scrape_interval", cfg.ScrapeInterval,
+		"custom_wallets", len(cfg.CustomWallets),
+	)
 
 	// Create exporter
-	log.Println("Creating exporter...")
-	exp, err := exporter.New(cfg)
+	logger.Info("Creating exporter...")
+	exp, err := exporter.New(cfg, logger)
 	if err != nil {
-		log.Fatalf("❌ Failed to create exporter: %v", err)
+		logger.Error("Failed to create exporter", "error", err)
+		os.Exit(1)
 	}
 	defer exp.Close()
 
@@ -76,7 +96,8 @@ func main() {
 	// Start exporter in background
 	go func() {
 		if err := exp.Start(ctx); err != nil && err != context.Canceled {
-			log.Fatalf("Exporter failed: %v", err)
+			logger.Error("Exporter failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -193,10 +214,11 @@ func main() {
 
 	// Start HTTP server in background
 	go func() {
-		log.Printf("Starting HTTP server on port %d", cfg.ExporterPort)
-		log.Printf("Metrics available at: http://localhost:%d/metrics", cfg.ExporterPort)
+		logger.Info("Starting HTTP server", "port", cfg.ExporterPort)
+		logger.Info("Metrics available", "url", fmt.Sprintf("http://localhost:%d/metrics", cfg.ExporterPort))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("HTTP server failed: %v", err)
+			logger.Error("HTTP server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -205,7 +227,7 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutting down gracefully...")
+	logger.Info("Shutting down gracefully...")
 
 	// Cancel context to stop exporter
 	cancel()
@@ -214,8 +236,8 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("HTTP server shutdown error: %v", err)
+		logger.Error("HTTP server shutdown error", "error", err)
 	}
 
-	log.Println("Exporter stopped")
+	logger.Info("Exporter stopped")
 }
