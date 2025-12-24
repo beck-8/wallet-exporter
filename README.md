@@ -10,6 +10,7 @@ A Prometheus exporter for monitoring Filecoin storage provider wallet balances (
 - ✅ Rich Prometheus labels: `approved`, `is_active`, `provider_id`, `name`, `type`
 - ✅ Supports both Filecoin mainnet and calibration testnet
 - ✅ Concurrent balance fetching for performance
+- ✅ **New:** HTTP Ping monitoring for Provider Service URLs
 - ✅ Health, status, and metrics endpoints
 - ✅ Docker support with docker-compose
 
@@ -185,6 +186,8 @@ docker run -d \
 | `dealbot_wallet_info` | Gauge | Wallet metadata (always 1) |
 | `dealbot_scrape_duration_seconds` | Gauge | Scrape duration |
 | `dealbot_scrape_errors_total` | Counter | Total scrape errors |
+| `dealbot_provider_ping_success` | Gauge | Provider Service URL availability (1=UP, 0=DOWN) |
+| `dealbot_provider_ping_ms` | Gauge | Provider Service URL latency in ms |
 
 ### Metric Labels
 
@@ -217,6 +220,10 @@ dealbot_wallet_info{address="0x682467D59F5679cB0BF13115d4C94550b8218CF2",approve
 # System metrics
 dealbot_scrape_duration_seconds 2.36
 dealbot_scrape_errors_total 0
+
+# Ping metrics
+dealbot_provider_ping_success{address="...",name="pspsps-calibnet",provider_id="11"} 1
+dealbot_provider_ping_ms{address="...",name="pspsps-calibnet",provider_id="11"} 1119
 ```
 
 ## Prometheus Configuration
