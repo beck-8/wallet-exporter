@@ -36,6 +36,12 @@ func Load() (*Config, error) {
 
 	// Default addresses per network
 	// Official contract addresses from Filecoin Synapse
+
+	defaultRPC := map[string]string{
+		"calibration": "https://api.calibration.node.glif.io/rpc/v1",
+		"mainnet":     "https://api.node.glif.io/rpc/v1",
+	}
+
 	defaultWarmStorage := map[string]string{
 		"calibration": "0x02925630df557F957f70E112bA06e50965417CA0",
 		"mainnet":     "0x8408502033C418E1bbC97cE9ac48E5528F371A9f",
@@ -56,7 +62,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Network:               network,
-		RPCURL:                getEnv("RPC_URL", "https://api.calibration.node.glif.io/rpc/v1"),
+		RPCURL:                getEnv("RPC_URL", defaultRPC[network]),
 		WarmStorageAddress:    getEnv("WARM_STORAGE_ADDRESS", defaultWarmStorage[network]),
 		USDFCTokenAddress:     getEnv("USDFC_TOKEN_ADDRESS", defaultUSDFC[network]),
 		PaymentsAddress:       getEnv("PAYMENTS_ADDRESS", defaultPayments[network]),

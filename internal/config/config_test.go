@@ -107,7 +107,7 @@ func TestParseCustomWallets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		wallets := parseCustomWallets(tt.input)
+		wallets := parseCustomWallets()
 		if len(wallets) != tt.expected {
 			t.Errorf("parseCustomWallets(%q) = %d wallets, want %d",
 				tt.input, len(wallets), tt.expected)

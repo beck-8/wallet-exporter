@@ -10,8 +10,8 @@ services:
     ports:
       - "${EXPORTER_PORT:-9091}:${EXPORTER_PORT:-9091}"
     environment:
-      - NETWORK=${NETWORK:-calibration}
-      - RPC_URL=${RPC_URL:-https://api.calibration.node.glif.io/rpc/v1}
+      - NETWORK=${NETWORK:-}
+      - RPC_URL=${RPC_URL:-}
       - WARM_STORAGE_ADDRESS=${WARM_STORAGE_ADDRESS:-}
       - USDFC_TOKEN_ADDRESS=${USDFC_TOKEN_ADDRESS:-}
       # Custom wallets - new multi-line format (recommended)
