@@ -191,7 +191,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
 			Name: fmt.Sprintf("%s_provider_ping_success", cfg.MetricsPrefix),
 			Help: "1 if the provider ping was successful (HTTP 200), 0 otherwise",
 		},
-		[]string{"address", "name", "provider_id"},
+		[]string{"address", "name", "provider_id", "service_url"},
 	)
 
 	pingDurationGauge := prometheus.NewGaugeVec(
@@ -199,7 +199,7 @@ func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
 			Name: fmt.Sprintf("%s_provider_ping_ms", cfg.MetricsPrefix),
 			Help: "Duration of the ping request in milliseconds",
 		},
-		[]string{"address", "name", "provider_id"},
+		[]string{"address", "name", "provider_id", "service_url"},
 	)
 
 	// Register metrics with custom registry
@@ -278,6 +278,8 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	e.logger.Info("Starting scrape...")
 
 	var allWallets []WalletInfo
+	var wg sync.WaitGroup
+	var pingResults map[uint64]PingResult
 
 	// 1. Fetch storage provider wallets
 	providerWallets, err := e.fetchProviderWallets(ctx)
@@ -288,7 +290,11 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 		e.logger.Info("Found storage providers", "count", len(providerWallets))
 
 		// Start concurrent pings for providers
-		go e.pingProviders(ctx, providerWallets)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pingResults = e.pingProviders(ctx, providerWallets)
+		}()
 	}
 
 	// 2. Fetch custom wallets
@@ -300,13 +306,16 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 		e.logger.Info("Found custom wallets", "count", len(customWallets))
 	}
 
+	// Wait for pings to complete
+	wg.Wait()
+
 	// Update cache
 	e.walletsMux.Lock()
 	e.wallets = allWallets
 	e.walletsMux.Unlock()
 
 	// Update Prometheus metrics
-	e.updateMetrics(allWallets)
+	e.updateMetrics(allWallets, pingResults)
 
 	e.logger.Info("Successfully scraped total wallets", "count", len(allWallets))
 	return nil
@@ -521,8 +530,14 @@ func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.Custom
 	}, nil
 }
 
-func (e *WalletExporter) updateMetrics(wallets []WalletInfo) {
-	// Reset metrics
+type PingResult struct {
+	Success    bool
+	Duration   time.Duration
+	ServiceURL string
+}
+
+func (e *WalletExporter) updateMetrics(wallets []WalletInfo, pingResults map[uint64]PingResult) {
+	// Reset metrics to avoid stale data
 	e.filBalanceGauge.Reset()
 	e.usdfcBalanceGauge.Reset()
 	e.walletInfoGauge.Reset()
@@ -530,6 +545,8 @@ func (e *WalletExporter) updateMetrics(wallets []WalletInfo) {
 	e.paymentsAvailableGauge.Reset()
 	e.paymentsLockedGauge.Reset()
 	e.paymentsFundedUntilGauge.Reset()
+	e.pingSuccessGauge.Reset()
+	e.pingDurationGauge.Reset()
 
 	for _, wallet := range wallets {
 		providerID := fmt.Sprintf("%d", wallet.ProviderID)
@@ -604,6 +621,25 @@ func (e *WalletExporter) updateMetrics(wallets []WalletInfo) {
 			"approved":    approved,
 		}
 		e.walletInfoGauge.With(infoLabels).Set(1)
+
+		// Set Ping metrics if available (only for providers)
+		if wallet.Type == "provider" {
+			if result, ok := pingResults[wallet.ProviderID]; ok {
+				pingLabels := prometheus.Labels{
+					"address":     wallet.Address.Hex(),
+					"name":        wallet.Name,
+					"provider_id": providerID,
+					"service_url": result.ServiceURL,
+				}
+
+				successVal := 0.0
+				if result.Success {
+					successVal = 1.0
+				}
+				e.pingSuccessGauge.With(pingLabels).Set(successVal)
+				e.pingDurationGauge.With(pingLabels).Set(float64(result.Duration.Milliseconds()))
+			}
+		}
 	}
 }
 
@@ -680,10 +716,13 @@ func (e *WalletExporter) fetchPaymentsInfo(ctx context.Context, address common.A
 	}, nil
 }
 
-// pingProviders pings all providers concurrently
-func (e *WalletExporter) pingProviders(ctx context.Context, providers []WalletInfo) {
+// pingProviders pings all providers concurrently and returns results
+func (e *WalletExporter) pingProviders(ctx context.Context, providers []WalletInfo) map[uint64]PingResult {
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, e.config.MaxConcurrentRequests)
+
+	results := make(map[uint64]PingResult)
+	var mu sync.Mutex
 
 	for _, p := range providers {
 		// specific check for provider ID > 0 just in case
@@ -697,33 +736,32 @@ func (e *WalletExporter) pingProviders(ctx context.Context, providers []WalletIn
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			e.pingProvider(ctx, p)
+			result, ok := e.pingProvider(ctx, p)
+			if ok {
+				mu.Lock()
+				results[p.ProviderID] = result
+				mu.Unlock()
+			}
 		}(p)
 	}
 
 	wg.Wait()
+	return results
 }
 
-func (e *WalletExporter) pingProvider(ctx context.Context, p WalletInfo) {
-	labels := prometheus.Labels{
-		"address":     p.Address.Hex(),
-		"name":        p.Name,
-		"provider_id": fmt.Sprintf("%d", p.ProviderID),
-	}
-
+func (e *WalletExporter) pingProvider(ctx context.Context, p WalletInfo) (PingResult, bool) {
 	// 1. Get Provider with Product (Product Type 0 for PDP)
 	// We use the generated struct directly
 	result, err := e.registryContract.GetProviderWithProduct(nil, big.NewInt(int64(p.ProviderID)), 0)
 	if err != nil {
 		// Log detailed error to debug
 		e.logger.Debug("Failed to get PDP product", "provider_id", p.ProviderID, "error", err)
-		return
+		return PingResult{}, false
 	}
 
 	// Check if product is active
 	if !result.Product.IsActive {
-		// log.Printf("Debug: Provider %d PDP product is inactive", p.ProviderID)
-		return
+		return PingResult{}, false
 	}
 
 	// 2. Decode Capabilities to find Service URL
@@ -739,7 +777,7 @@ func (e *WalletExporter) pingProvider(ctx context.Context, p WalletInfo) {
 
 	if serviceURL == "" {
 		e.logger.Debug("PDP product has no serviceURL", "provider_id", p.ProviderID)
-		return
+		return PingResult{}, false
 	}
 
 	e.logger.Debug("Found serviceURL", "provider_id", p.ProviderID, "url", serviceURL)
@@ -757,20 +795,16 @@ func (e *WalletExporter) pingProvider(ctx context.Context, p WalletInfo) {
 	resp, err := client.Get(pingURL)
 	duration := time.Since(start)
 
-	// Record duration in ms
-	e.pingDurationGauge.With(labels).Set(float64(duration.Milliseconds()))
-
 	if err != nil {
 		e.logger.Warn("Ping failed", "provider_id", p.ProviderID, "name", p.Name, "url", pingURL, "error", err)
-		e.pingSuccessGauge.With(labels).Set(0)
-		return
+		return PingResult{Success: false, Duration: duration, ServiceURL: serviceURL}, true
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		e.pingSuccessGauge.With(labels).Set(1)
-	} else {
+	success := resp.StatusCode == http.StatusOK
+	if !success {
 		e.logger.Warn("Ping returned non-200 status", "status", resp.StatusCode, "provider_id", p.ProviderID, "name", p.Name, "url", pingURL)
-		e.pingSuccessGauge.With(labels).Set(0)
 	}
+
+	return PingResult{Success: success, Duration: duration, ServiceURL: serviceURL}, true
 }

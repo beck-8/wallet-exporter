@@ -77,12 +77,14 @@ func Load() (*Config, error) {
 
 // parseCustomWallets parses custom wallet configuration
 // Supports two formats:
-// 1. Legacy format (CUSTOM_WALLETS): "address1:name1:type1,address2:name2:type2,..."
-// 2. Multi-line format (recommended): CUSTOM_WALLET_1, CUSTOM_WALLET_2, ...
-//    Each line format: "address:name:type" or "address:name" (type defaults to "other")
+//  1. Legacy format (CUSTOM_WALLETS): "address1:name1:type1,address2:name2:type2,..."
+//  2. Multi-line format (recommended): CUSTOM_WALLET_1, CUSTOM_WALLET_2, ...
+//     Each line format: "address:name:type" or "address:name" (type defaults to "other")
+//
 // Example:
-//   CUSTOM_WALLET_1=0x123...:Client A:client
-//   CUSTOM_WALLET_2=0x456...:Operator B:operator
+//
+//	CUSTOM_WALLET_1=0x123...:Client A:client
+//	CUSTOM_WALLET_2=0x456...:Operator B:operator
 func parseCustomWallets() []CustomWallet {
 	var wallets []CustomWallet
 
