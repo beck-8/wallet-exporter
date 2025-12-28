@@ -285,6 +285,7 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	providerWallets, err := e.fetchProviderWallets(ctx)
 	if err != nil {
 		e.logger.Warn("Failed to fetch provider wallets", "error", err)
+		e.scrapeErrors.Inc()
 	} else {
 		allWallets = append(allWallets, providerWallets...)
 		e.logger.Info("Found storage providers", "count", len(providerWallets))
@@ -301,6 +302,7 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	customWallets, err := e.fetchCustomWallets(ctx)
 	if err != nil {
 		e.logger.Warn("Failed to fetch custom wallets", "error", err)
+		e.scrapeErrors.Inc()
 	} else {
 		allWallets = append(allWallets, customWallets...)
 		e.logger.Info("Found custom wallets", "count", len(customWallets))
