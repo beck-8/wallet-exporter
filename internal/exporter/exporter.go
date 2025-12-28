@@ -331,6 +331,7 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 	approvedIDs, err := e.viewContract.GetApprovedProviders(nil, big.NewInt(0), big.NewInt(0))
 	if err != nil {
 		e.logger.Warn("Failed to get approved providers", "error", err)
+		e.scrapeErrors.Inc()
 		approvedIDs = []*big.Int{} // Continue with empty approved list
 	}
 
