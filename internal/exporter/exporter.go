@@ -3,7 +3,6 @@ package exporter
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"math/big"
 	"net/http"
@@ -285,7 +284,6 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	providerWallets, err := e.fetchProviderWallets(ctx)
 	if err != nil {
 		e.logger.Warn("Failed to fetch provider wallets", "error", err)
-		e.scrapeErrors.Inc()
 	} else {
 		allWallets = append(allWallets, providerWallets...)
 		e.logger.Info("Found storage providers", "count", len(providerWallets))
@@ -302,7 +300,6 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	customWallets, err := e.fetchCustomWallets(ctx)
 	if err != nil {
 		e.logger.Warn("Failed to fetch custom wallets", "error", err)
-		e.scrapeErrors.Inc()
 	} else {
 		allWallets = append(allWallets, customWallets...)
 		e.logger.Info("Found custom wallets", "count", len(customWallets))
@@ -382,9 +379,10 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 		wallets = append(wallets, wallet)
 	}
 
-	// Log any errors
+	// Log any errors and increment scrape error counter
 	for err := range errorChan {
 		e.logger.Warn("Provider fetch warning", "error", err)
+		e.scrapeErrors.Inc()
 	}
 
 	return wallets, nil
@@ -481,7 +479,8 @@ func (e *WalletExporter) fetchCustomWallets(ctx context.Context) ([]WalletInfo, 
 	}
 
 	for err := range errorChan {
-		log.Printf("Warning: %v", err)
+		e.logger.Warn("Custom wallet fetch warning", "error", err)
+		e.scrapeErrors.Inc()
 	}
 
 	return wallets, nil
