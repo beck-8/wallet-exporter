@@ -44,33 +44,48 @@ type WalletExporter struct {
 	registryContract    *contracts.ServiceProviderRegistry
 	usdfcContract       *contracts.ERC20
 
-	// Prometheus metrics
-	registry                 *prometheus.Registry
-	filBalanceGauge          *prometheus.GaugeVec
-	usdfcBalanceGauge        *prometheus.GaugeVec
-	walletInfoGauge          *prometheus.GaugeVec
-	paymentsFundsGauge       *prometheus.GaugeVec
-	paymentsAvailableGauge   *prometheus.GaugeVec
-	paymentsLockedGauge      *prometheus.GaugeVec
-	paymentsFundedUntilGauge *prometheus.GaugeVec
-	scrapeDuration           prometheus.Gauge
-	scrapeErrors             prometheus.Counter
+	// Prometheus metrics.
+	//
+	// The per-wallet metrics are exposed through a custom prometheus.Collector
+	// (Describe/Collect on *WalletExporter) rather than GaugeVecs. Collect emits
+	// the full set from an immutable snapshot on every Gather, so a /metrics
+	// scrape can never observe a half-populated state — this eliminates the
+	// Reset()+Set() window that previously made series flicker to zero.
+	registry                *prometheus.Registry
+	filBalanceDesc          *prometheus.Desc
+	usdfcBalanceDesc        *prometheus.Desc
+	walletInfoDesc          *prometheus.Desc
+	paymentsFundsDesc       *prometheus.Desc
+	paymentsAvailableDesc   *prometheus.Desc
+	paymentsLockedDesc      *prometheus.Desc
+	paymentsFundedUntilDesc *prometheus.Desc
+	pingSuccessDesc         *prometheus.Desc
+	pingDurationDesc        *prometheus.Desc
+	scrapeDuration          prometheus.Gauge
+	scrapeErrors            prometheus.Counter
 
-	// Cache
-	wallets    []WalletInfo
-	walletsMux sync.RWMutex
-	lastScrape time.Time
+	// Cache / snapshot for the collector
+	wallets     []WalletInfo
+	pingResults map[uint64]PingResult
+	walletsMux  sync.RWMutex
+	lastScrape  time.Time
 
-	// Ping metrics
-	pingSuccessGauge  *prometheus.GaugeVec
-	pingDurationGauge *prometheus.GaugeVec
+	// Last-good cache: keeps the most recent successful value per wallet so a
+	// transient RPC failure (e.g. 429) carries the previous reading forward
+	// instead of writing 0 or dropping the series (which produces the spiky
+	// drop-to-zero graphs).
+	lastGoodProviders map[uint64]WalletInfo // keyed by provider ID
+	lastGoodCustom    map[string]WalletInfo // keyed by lower-case address
+	lastApprovedMap   map[uint64]bool       // last successful approved-provider set
+	cacheMux          sync.Mutex
 
 	logger *slog.Logger
 }
 
 func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
-	// Connect to Ethereum client
-	client, err := ethclient.Dial(cfg.RPCURL)
+	// Connect to Ethereum client with optional Bearer-token auth and a
+	// retrying transport (handles RPC rate limiting / 429).
+	client, err := dialRPC(context.Background(), cfg.RPCURL, cfg.RPCToken, cfg.RPCMaxRetries, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Ethereum client: %w", err)
 	}
@@ -114,63 +129,8 @@ func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
 	// Create custom registry to avoid conflicts
 	registry := prometheus.NewRegistry()
 
-	// Create Prometheus metrics
-	filBalanceGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_fil_balance", cfg.MetricsPrefix),
-			Help: "FIL (native token) balance for each wallet",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
-	usdfcBalanceGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_usdfc_balance", cfg.MetricsPrefix),
-			Help: "USDFC token balance for each wallet",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
-	walletInfoGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_info", cfg.MetricsPrefix),
-			Help: "Wallet information (always 1)",
-		},
-		[]string{"address", "name", "type", "provider_id", "description", "is_active", "approved"},
-	)
-
-	paymentsFundsGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_payments_funds", cfg.MetricsPrefix),
-			Help: "Total funds in Payments contract for each wallet",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
-	paymentsAvailableGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_payments_available", cfg.MetricsPrefix),
-			Help: "Available funds in Payments contract (after lockup)",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
-	paymentsLockedGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_payments_locked", cfg.MetricsPrefix),
-			Help: "Locked funds in Payments contract",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
-	paymentsFundedUntilGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_wallet_payments_funded_until_epoch", cfg.MetricsPrefix),
-			Help: "Estimated epoch when Payments funds will run out",
-		},
-		[]string{"address", "name", "type", "provider_id", "is_active", "approved"},
-	)
-
+	// Scalar metrics. These are updated atomically as single values and never
+	// Reset(), so they are registered directly (no flicker risk).
 	scrapeDuration := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: fmt.Sprintf("%s_scrape_duration_seconds", cfg.MetricsPrefix),
@@ -185,57 +145,58 @@ func New(cfg *config.Config, logger *slog.Logger) (*WalletExporter, error) {
 		},
 	)
 
-	pingSuccessGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_provider_ping_success", cfg.MetricsPrefix),
-			Help: "1 if the provider ping was successful (HTTP 200), 0 otherwise",
-		},
-		[]string{"address", "name", "provider_id", "service_url"},
-	)
+	balanceLabels := []string{"address", "name", "type", "provider_id", "is_active", "approved"}
+	pingLabels := []string{"address", "name", "provider_id", "service_url"}
 
-	pingDurationGauge := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: fmt.Sprintf("%s_provider_ping_ms", cfg.MetricsPrefix),
-			Help: "Duration of the ping request in milliseconds",
-		},
-		[]string{"address", "name", "provider_id", "service_url"},
-	)
+	e := &WalletExporter{
+		config:              cfg,
+		client:              client,
+		warmStorageContract: warmStorageContract,
+		viewContract:        viewContract,
+		registryContract:    registryContract,
+		usdfcContract:       usdfcContract,
+		registry:            registry,
+		filBalanceDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_fil_balance", cfg.MetricsPrefix),
+			"FIL (native token) balance for each wallet", balanceLabels, nil),
+		usdfcBalanceDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_usdfc_balance", cfg.MetricsPrefix),
+			"USDFC token balance for each wallet", balanceLabels, nil),
+		walletInfoDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_info", cfg.MetricsPrefix),
+			"Wallet information (always 1)",
+			[]string{"address", "name", "type", "provider_id", "description", "is_active", "approved"}, nil),
+		paymentsFundsDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_payments_funds", cfg.MetricsPrefix),
+			"Total funds in Payments contract for each wallet", balanceLabels, nil),
+		paymentsAvailableDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_payments_available", cfg.MetricsPrefix),
+			"Available funds in Payments contract (after lockup)", balanceLabels, nil),
+		paymentsLockedDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_payments_locked", cfg.MetricsPrefix),
+			"Locked funds in Payments contract", balanceLabels, nil),
+		paymentsFundedUntilDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_wallet_payments_funded_until_epoch", cfg.MetricsPrefix),
+			"Estimated epoch when Payments funds will run out", balanceLabels, nil),
+		pingSuccessDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_provider_ping_success", cfg.MetricsPrefix),
+			"1 if the provider ping was successful (HTTP 200), 0 otherwise", pingLabels, nil),
+		pingDurationDesc: prometheus.NewDesc(
+			fmt.Sprintf("%s_provider_ping_ms", cfg.MetricsPrefix),
+			"Duration of the ping request in milliseconds", pingLabels, nil),
+		scrapeDuration:    scrapeDuration,
+		scrapeErrors:      scrapeErrors,
+		wallets:           []WalletInfo{},
+		lastGoodProviders: make(map[uint64]WalletInfo),
+		lastGoodCustom:    make(map[string]WalletInfo),
+		lastApprovedMap:   make(map[uint64]bool),
+		logger:            logger,
+	}
 
-	// Register metrics with custom registry
-	registry.MustRegister(filBalanceGauge)
-	registry.MustRegister(usdfcBalanceGauge)
-	registry.MustRegister(walletInfoGauge)
-	registry.MustRegister(paymentsFundsGauge)
-	registry.MustRegister(paymentsAvailableGauge)
-	registry.MustRegister(paymentsLockedGauge)
-	registry.MustRegister(paymentsFundedUntilGauge)
-	registry.MustRegister(scrapeDuration)
-	registry.MustRegister(scrapeErrors)
-	registry.MustRegister(pingSuccessGauge)
-	registry.MustRegister(pingDurationGauge)
+	// Register the scalar metrics and the per-wallet collector (e itself).
+	registry.MustRegister(scrapeDuration, scrapeErrors, e)
 
-	return &WalletExporter{
-		config:                   cfg,
-		client:                   client,
-		warmStorageContract:      warmStorageContract,
-		viewContract:             viewContract,
-		registryContract:         registryContract,
-		usdfcContract:            usdfcContract,
-		registry:                 registry,
-		filBalanceGauge:          filBalanceGauge,
-		usdfcBalanceGauge:        usdfcBalanceGauge,
-		walletInfoGauge:          walletInfoGauge,
-		paymentsFundsGauge:       paymentsFundsGauge,
-		paymentsAvailableGauge:   paymentsAvailableGauge,
-		paymentsLockedGauge:      paymentsLockedGauge,
-		paymentsFundedUntilGauge: paymentsFundedUntilGauge,
-		scrapeDuration:           scrapeDuration,
-		scrapeErrors:             scrapeErrors,
-		pingSuccessGauge:         pingSuccessGauge,
-		pingDurationGauge:        pingDurationGauge,
-		wallets:                  []WalletInfo{},
-		logger:                   logger,
-	}, nil
+	return e, nil
 }
 
 func (e *WalletExporter) Start(ctx context.Context) error {
@@ -308,63 +269,84 @@ func (e *WalletExporter) scrape(ctx context.Context) error {
 	// Wait for pings to complete
 	wg.Wait()
 
-	// Update cache
+	// Publish the snapshot the collector reads from. Swapping the references
+	// under the lock is the only mutation the collector ever observes, so a
+	// /metrics scrape always sees a complete, internally-consistent set.
 	e.walletsMux.Lock()
 	e.wallets = allWallets
+	e.pingResults = pingResults
 	e.walletsMux.Unlock()
-
-	// Update Prometheus metrics
-	e.updateMetrics(allWallets, pingResults)
 
 	e.logger.Info("Successfully scraped total wallets", "count", len(allWallets))
 	return nil
 }
 
 func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo, error) {
+	// Snapshot the last-good values so failed fetches can be carried forward.
+	prevProviders := e.snapshotProviders()
+
 	// Get total provider count
 	providerCount, err := e.registryContract.GetProviderCount(nil)
 	if err != nil {
+		e.scrapeErrors.Inc()
+		// Carry the entire cached provider set forward so the series survive a
+		// transient failure instead of every provider dropping to zero.
+		if len(prevProviders) > 0 {
+			e.logger.Warn("Failed to get provider count, using cached providers",
+				"error", err, "cached", len(prevProviders))
+			return mapToSlice(prevProviders), nil
+		}
 		return nil, fmt.Errorf("failed to get provider count: %w", err)
 	}
 
 	// Get approved provider IDs for checking
 	approvedIDs, err := e.viewContract.GetApprovedProviders(nil, big.NewInt(0), big.NewInt(0))
+	var approvedMap map[uint64]bool
 	if err != nil {
-		e.logger.Warn("Failed to get approved providers", "error", err)
+		// Reuse the last successful approved set so the `approved` label doesn't
+		// flip to false for every provider on a transient failure.
+		approvedMap = e.snapshotApproved()
+		e.logger.Warn("Failed to get approved providers, using cached approved set",
+			"error", err, "cached", len(approvedMap))
 		e.scrapeErrors.Inc()
-		approvedIDs = []*big.Int{} // Continue with empty approved list
+	} else {
+		approvedMap = make(map[uint64]bool)
+		for _, id := range approvedIDs {
+			approvedMap[id.Uint64()] = true
+		}
+		e.storeApproved(approvedMap)
 	}
 
-	// Create a map for quick lookup of approved providers
-	approvedMap := make(map[uint64]bool)
-	for _, id := range approvedIDs {
-		approvedMap[id.Uint64()] = true
-	}
-
-	e.logger.Info("Provider count stats", "total", providerCount.Uint64(), "approved", len(approvedIDs))
+	e.logger.Info("Provider count stats", "total", providerCount.Uint64(), "approved", len(approvedMap))
 
 	// Fetch all providers (provider IDs start from 1)
-	wallets := make([]WalletInfo, 0, int(providerCount.Int64()))
-	walletChan := make(chan WalletInfo, int(providerCount.Int64()))
-	errorChan := make(chan error, int(providerCount.Int64()))
+	count := providerCount.Uint64()
+	wallets := make([]WalletInfo, 0, count)
+	walletChan := make(chan WalletInfo, count)
+	errorChan := make(chan error, count)
 
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, e.config.MaxConcurrentRequests) // Limit concurrent requests
 
-	for i := uint64(1); i <= providerCount.Uint64(); i++ {
+	for i := uint64(1); i <= count; i++ {
 		wg.Add(1)
 		go func(providerID uint64) {
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			isApproved := approvedMap[providerID]
-			wallet, err := e.fetchProviderWallet(ctx, big.NewInt(int64(providerID)), isApproved)
-			if err != nil {
-				errorChan <- fmt.Errorf("failed to fetch provider %d: %w", providerID, err)
-				return
+			var prev *WalletInfo
+			if p, ok := prevProviders[providerID]; ok {
+				prev = &p
 			}
-			walletChan <- wallet
+			isApproved := approvedMap[providerID]
+			wallet, ok, err := e.fetchProviderWallet(ctx, big.NewInt(int64(providerID)), isApproved, prev)
+			if err != nil {
+				errorChan <- err
+			}
+			if ok {
+				walletChan <- wallet
+			}
 		}(i)
 	}
 
@@ -386,65 +368,97 @@ func (e *WalletExporter) fetchProviderWallets(ctx context.Context) ([]WalletInfo
 		e.scrapeErrors.Inc()
 	}
 
+	// Refresh the last-good cache with this round's usable values.
+	e.storeProviders(wallets)
+
 	return wallets, nil
 }
 
-func (e *WalletExporter) fetchProviderWallet(ctx context.Context, providerID *big.Int, isApproved bool) (WalletInfo, error) {
+// fetchProviderWallet fetches a single provider. It returns best-effort data:
+// when an individual RPC call fails it falls back to the cached previous value
+// (prev) rather than writing 0 or dropping the whole wallet. The bool result is
+// false only when there is no fresh data and no cache to fall back on, in which
+// case the wallet is skipped this round. A non-nil error is reported for metrics
+// even when the wallet is still usable via the cache.
+func (e *WalletExporter) fetchProviderWallet(ctx context.Context, providerID *big.Int, isApproved bool, prev *WalletInfo) (WalletInfo, bool, error) {
+	id := providerID.Uint64()
+
 	// Get provider info from registry
 	result, err := e.registryContract.GetProvider(nil, providerID)
 	if err != nil {
-		return WalletInfo{}, fmt.Errorf("failed to get provider info: %w", err)
+		if prev != nil {
+			carried := *prev
+			carried.IsApproved = isApproved
+			return carried, true, fmt.Errorf("get provider %d info (using cached value): %w", id, err)
+		}
+		return WalletInfo{}, false, fmt.Errorf("get provider %d info: %w", id, err)
 	}
 
 	// Extract the nested info struct
 	info := result.Info
+	wallet := WalletInfo{
+		Address:     info.ServiceProvider,
+		Name:        info.Name,
+		Type:        "provider",
+		ProviderID:  id,
+		IsActive:    info.IsActive,
+		IsApproved:  isApproved,
+		Description: info.Description,
+	}
+
+	var firstErr error
+	note := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
 	// Get FIL balance
 	filBalance, err := e.client.BalanceAt(ctx, info.ServiceProvider, nil)
 	if err != nil {
-		return WalletInfo{}, fmt.Errorf("failed to get FIL balance: %w", err)
+		if prev != nil && prev.FILBalance != nil {
+			filBalance = prev.FILBalance
+			note(fmt.Errorf("get FIL balance for provider %d (using cached value): %w", id, err))
+		} else {
+			// No fresh and no cached balance — skip rather than emit a 0.
+			return WalletInfo{}, false, fmt.Errorf("get FIL balance for provider %d: %w", id, err)
+		}
 	}
+	wallet.FILBalance = filBalance
 
 	// Get USDFC balance
 	usdfcBalance, err := e.usdfcContract.BalanceOf(nil, info.ServiceProvider)
 	if err != nil {
-		e.logger.Warn("Failed to get USDFC balance", "address", info.ServiceProvider.Hex(), "error", err)
-		usdfcBalance = big.NewInt(0)
+		note(fmt.Errorf("get USDFC balance for provider %d (using cached value): %w", id, err))
+		if prev != nil {
+			usdfcBalance = orZero(prev.USDFCBalance)
+		} else {
+			usdfcBalance = big.NewInt(0)
+		}
 	}
+	wallet.USDFCBalance = usdfcBalance
 
 	// Get Payments contract info
 	paymentsInfo, err := e.fetchPaymentsInfo(ctx, info.ServiceProvider)
 	if err != nil {
-		e.logger.Warn("Failed to get Payments info", "address", info.ServiceProvider.Hex(), "error", err)
-		paymentsInfo = &PaymentsInfo{
-			Funds:            big.NewInt(0),
-			Available:        big.NewInt(0),
-			Locked:           big.NewInt(0),
-			FundedUntilEpoch: big.NewInt(0),
-		}
+		note(fmt.Errorf("get Payments info for provider %d (using cached value): %w", id, err))
+		applyCachedPayments(&wallet, prev)
+	} else {
+		wallet.PaymentsFunds = paymentsInfo.Funds
+		wallet.PaymentsAvailable = paymentsInfo.Available
+		wallet.PaymentsLocked = paymentsInfo.Locked
+		wallet.PaymentsFundedUntil = paymentsInfo.FundedUntilEpoch
 	}
 
-	return WalletInfo{
-		Address:             info.ServiceProvider,
-		Name:                info.Name,
-		Type:                "provider",
-		ProviderID:          providerID.Uint64(),
-		IsActive:            info.IsActive,
-		IsApproved:          isApproved,
-		Description:         info.Description,
-		FILBalance:          filBalance,
-		USDFCBalance:        usdfcBalance,
-		PaymentsFunds:       paymentsInfo.Funds,
-		PaymentsAvailable:   paymentsInfo.Available,
-		PaymentsLocked:      paymentsInfo.Locked,
-		PaymentsFundedUntil: paymentsInfo.FundedUntilEpoch,
-	}, nil
+	return wallet, true, firstErr
 }
 
 func (e *WalletExporter) fetchCustomWallets(ctx context.Context) ([]WalletInfo, error) {
 	if len(e.config.CustomWallets) == 0 {
 		return []WalletInfo{}, nil
 	}
+
+	prevCustom := e.snapshotCustom()
 
 	wallets := make([]WalletInfo, 0, len(e.config.CustomWallets))
 	walletChan := make(chan WalletInfo, len(e.config.CustomWallets))
@@ -460,12 +474,17 @@ func (e *WalletExporter) fetchCustomWallets(ctx context.Context) ([]WalletInfo, 
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			wallet, err := e.fetchCustomWallet(ctx, cw)
-			if err != nil {
-				errorChan <- fmt.Errorf("failed to fetch custom wallet %s: %w", cw.Address, err)
-				return
+			var prev *WalletInfo
+			if p, ok := prevCustom[cacheKey(cw.Address)]; ok {
+				prev = &p
 			}
-			walletChan <- wallet
+			wallet, ok, err := e.fetchCustomWallet(ctx, cw, prev)
+			if err != nil {
+				errorChan <- err
+			}
+			if ok {
+				walletChan <- wallet
+			}
 		}(customWallet)
 	}
 
@@ -484,165 +503,76 @@ func (e *WalletExporter) fetchCustomWallets(ctx context.Context) ([]WalletInfo, 
 		e.scrapeErrors.Inc()
 	}
 
+	e.storeCustom(wallets)
+
 	return wallets, nil
 }
 
-func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.CustomWallet) (WalletInfo, error) {
+// fetchCustomWallet mirrors fetchProviderWallet's carry-forward behaviour for a
+// configured custom wallet: failed RPC calls fall back to the cached previous
+// value instead of writing 0 or dropping the series.
+func (e *WalletExporter) fetchCustomWallet(ctx context.Context, cw config.CustomWallet, prev *WalletInfo) (WalletInfo, bool, error) {
 	address := common.HexToAddress(cw.Address)
+
+	wallet := WalletInfo{
+		Address:    address,
+		Name:       cw.Name,
+		Type:       cw.Type,
+		ProviderID: 0,
+		IsActive:   false,
+		IsApproved: false,
+	}
+
+	var firstErr error
+	note := func(err error) {
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
 
 	// Get FIL balance
 	filBalance, err := e.client.BalanceAt(ctx, address, nil)
 	if err != nil {
-		return WalletInfo{}, fmt.Errorf("failed to get FIL balance: %w", err)
+		if prev != nil && prev.FILBalance != nil {
+			filBalance = prev.FILBalance
+			note(fmt.Errorf("get FIL balance for %s (using cached value): %w", cw.Address, err))
+		} else {
+			return WalletInfo{}, false, fmt.Errorf("get FIL balance for %s: %w", cw.Address, err)
+		}
 	}
+	wallet.FILBalance = filBalance
 
 	// Get USDFC balance
 	usdfcBalance, err := e.usdfcContract.BalanceOf(nil, address)
 	if err != nil {
-		e.logger.Warn("Failed to get USDFC balance", "address", address.Hex(), "error", err)
-		usdfcBalance = big.NewInt(0)
+		note(fmt.Errorf("get USDFC balance for %s (using cached value): %w", cw.Address, err))
+		if prev != nil {
+			usdfcBalance = orZero(prev.USDFCBalance)
+		} else {
+			usdfcBalance = big.NewInt(0)
+		}
 	}
+	wallet.USDFCBalance = usdfcBalance
 
 	// Get Payments contract info
 	paymentsInfo, err := e.fetchPaymentsInfo(ctx, address)
 	if err != nil {
-		e.logger.Warn("Failed to get Payments info", "address", address.Hex(), "error", err)
-		paymentsInfo = &PaymentsInfo{
-			Funds:            big.NewInt(0),
-			Available:        big.NewInt(0),
-			Locked:           big.NewInt(0),
-			FundedUntilEpoch: big.NewInt(0),
-		}
+		note(fmt.Errorf("get Payments info for %s (using cached value): %w", cw.Address, err))
+		applyCachedPayments(&wallet, prev)
+	} else {
+		wallet.PaymentsFunds = paymentsInfo.Funds
+		wallet.PaymentsAvailable = paymentsInfo.Available
+		wallet.PaymentsLocked = paymentsInfo.Locked
+		wallet.PaymentsFundedUntil = paymentsInfo.FundedUntilEpoch
 	}
 
-	return WalletInfo{
-		Address:             address,
-		Name:                cw.Name,
-		Type:                cw.Type,
-		ProviderID:          0,
-		IsActive:            false,
-		IsApproved:          false,
-		Description:         "",
-		FILBalance:          filBalance,
-		USDFCBalance:        usdfcBalance,
-		PaymentsFunds:       paymentsInfo.Funds,
-		PaymentsAvailable:   paymentsInfo.Available,
-		PaymentsLocked:      paymentsInfo.Locked,
-		PaymentsFundedUntil: paymentsInfo.FundedUntilEpoch,
-	}, nil
+	return wallet, true, firstErr
 }
 
 type PingResult struct {
 	Success    bool
 	Duration   time.Duration
 	ServiceURL string
-}
-
-func (e *WalletExporter) updateMetrics(wallets []WalletInfo, pingResults map[uint64]PingResult) {
-	// Reset metrics to avoid stale data
-	e.filBalanceGauge.Reset()
-	e.usdfcBalanceGauge.Reset()
-	e.walletInfoGauge.Reset()
-	e.paymentsFundsGauge.Reset()
-	e.paymentsAvailableGauge.Reset()
-	e.paymentsLockedGauge.Reset()
-	e.paymentsFundedUntilGauge.Reset()
-	e.pingSuccessGauge.Reset()
-	e.pingDurationGauge.Reset()
-
-	for _, wallet := range wallets {
-		providerID := fmt.Sprintf("%d", wallet.ProviderID)
-		if wallet.Type != "provider" {
-			providerID = ""
-		}
-
-		isActive := fmt.Sprintf("%t", wallet.IsActive)
-		if wallet.Type != "provider" {
-			isActive = ""
-		}
-
-		approved := fmt.Sprintf("%t", wallet.IsApproved)
-		if wallet.Type != "provider" {
-			approved = ""
-		}
-
-		labels := prometheus.Labels{
-			"address":     wallet.Address.Hex(),
-			"name":        wallet.Name,
-			"type":        wallet.Type,
-			"provider_id": providerID,
-			"is_active":   isActive,
-			"approved":    approved,
-		}
-
-		// Set FIL balance (in FIL, not wei)
-		filFloat, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(wallet.FILBalance),
-			big.NewFloat(1e18),
-		).Float64()
-		e.filBalanceGauge.With(labels).Set(filFloat)
-
-		// Set USDFC balance (USDFC has 18 decimals)
-		usdfcFloat, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(wallet.USDFCBalance),
-			big.NewFloat(1e18),
-		).Float64()
-		e.usdfcBalanceGauge.With(labels).Set(usdfcFloat)
-
-		// Set Payments contract metrics (USDFC has 18 decimals)
-		paymentsFundsFloat, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(wallet.PaymentsFunds),
-			big.NewFloat(1e18),
-		).Float64()
-		e.paymentsFundsGauge.With(labels).Set(paymentsFundsFloat)
-
-		paymentsAvailableFloat, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(wallet.PaymentsAvailable),
-			big.NewFloat(1e18),
-		).Float64()
-		e.paymentsAvailableGauge.With(labels).Set(paymentsAvailableFloat)
-
-		paymentsLockedFloat, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(wallet.PaymentsLocked),
-			big.NewFloat(1e18),
-		).Float64()
-		e.paymentsLockedGauge.With(labels).Set(paymentsLockedFloat)
-
-		// PaymentsFundedUntil is an epoch (block number), not a token amount
-		paymentsFundedUntilFloat, _ := new(big.Float).SetInt(wallet.PaymentsFundedUntil).Float64()
-		e.paymentsFundedUntilGauge.With(labels).Set(paymentsFundedUntilFloat)
-
-		// Set info metric
-		infoLabels := prometheus.Labels{
-			"address":     wallet.Address.Hex(),
-			"name":        wallet.Name,
-			"type":        wallet.Type,
-			"provider_id": providerID,
-			"description": wallet.Description,
-			"is_active":   isActive,
-			"approved":    approved,
-		}
-		e.walletInfoGauge.With(infoLabels).Set(1)
-
-		// Set Ping metrics if available (only for providers)
-		if wallet.Type == "provider" {
-			if result, ok := pingResults[wallet.ProviderID]; ok {
-				pingLabels := prometheus.Labels{
-					"address":     wallet.Address.Hex(),
-					"name":        wallet.Name,
-					"provider_id": providerID,
-					"service_url": result.ServiceURL,
-				}
-
-				successVal := 0.0
-				if result.Success {
-					successVal = 1.0
-				}
-				e.pingSuccessGauge.With(pingLabels).Set(successVal)
-				e.pingDurationGauge.With(pingLabels).Set(float64(result.Duration.Milliseconds()))
-			}
-		}
-	}
 }
 
 func (e *WalletExporter) GetWallets() []WalletInfo {
@@ -689,13 +619,20 @@ func (e *WalletExporter) fetchPaymentsInfo(ctx context.Context, address common.A
 	// Call getAccountInfoIfSettled - type-safe method from abigen
 	result, err := paymentsContract.GetAccountInfoIfSettled(nil, usdfcAddr, address)
 	if err != nil {
-		// Handle error - might be account doesn't exist
-		return &PaymentsInfo{
-			Funds:            big.NewInt(0),
-			Available:        big.NewInt(0),
-			Locked:           big.NewInt(0),
-			FundedUntilEpoch: big.NewInt(0),
-		}, nil
+		// A reverted call means the account simply has no Payments entry yet,
+		// which is a legitimate zero — not an RPC failure. Return zeros without
+		// an error so it is reported as 0 rather than carried forward.
+		if strings.Contains(err.Error(), "execution reverted") {
+			return &PaymentsInfo{
+				Funds:            big.NewInt(0),
+				Available:        big.NewInt(0),
+				Locked:           big.NewInt(0),
+				FundedUntilEpoch: big.NewInt(0),
+			}, nil
+		}
+		// Any other error (e.g. RPC rate limiting) is transient — surface it so
+		// the caller can carry the previous value forward instead of zeroing.
+		return nil, fmt.Errorf("getAccountInfoIfSettled: %w", err)
 	}
 
 	// Extract values from the result struct
