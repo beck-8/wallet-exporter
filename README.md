@@ -71,6 +71,8 @@ The exporter will:
 |----------|-------------|----------------------|
 | `NETWORK` | Network name (mainnet or calibration) | `calibration` |
 | `RPC_URL` | Filecoin RPC endpoint | `https://api.calibration.node.glif.io/rpc/v1` |
+| `RPC_TOKEN` | RPC auth token, sent as `Authorization: Bearer <token>` (use for authenticated/higher-limit endpoints) | - |
+| `RPC_MAX_RETRIES` | Retries per RPC call on 429 / transient 5xx (exponential backoff + jitter, honours Retry-After) | `3` |
 | `WARM_STORAGE_ADDRESS` | WarmStorageService contract address | `0x02925630df557F957f70E112bA06e50965417CA0` |
 | `USDFC_TOKEN_ADDRESS` | USDFC ERC20 token address (auto-detected if not set) | `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0` |
 | `CUSTOM_WALLET_N` | Additional wallets to monitor (see below) | - |

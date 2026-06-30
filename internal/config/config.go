@@ -13,6 +13,8 @@ import (
 type Config struct {
 	Network               string
 	RPCURL                string
+	RPCToken              string
+	RPCMaxRetries         int
 	WarmStorageAddress    string
 	USDFCTokenAddress     string
 	PaymentsAddress       string
@@ -63,6 +65,8 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Network:               network,
 		RPCURL:                getEnv("RPC_URL", defaultRPC[network]),
+		RPCToken:              getEnv("RPC_TOKEN", ""),
+		RPCMaxRetries:         getEnvInt("RPC_MAX_RETRIES", 3),
 		WarmStorageAddress:    getEnv("WARM_STORAGE_ADDRESS", defaultWarmStorage[network]),
 		USDFCTokenAddress:     getEnv("USDFC_TOKEN_ADDRESS", defaultUSDFC[network]),
 		PaymentsAddress:       getEnv("PAYMENTS_ADDRESS", defaultPayments[network]),
@@ -159,6 +163,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxConcurrentRequests <= 0 || c.MaxConcurrentRequests > 1000 {
 		return fmt.Errorf("MAX_CONCURRENT_REQUESTS must be between 1 and 1000")
+	}
+	if c.RPCMaxRetries < 0 || c.RPCMaxRetries > 10 {
+		return fmt.Errorf("RPC_MAX_RETRIES must be between 0 and 10")
 	}
 	return nil
 }
